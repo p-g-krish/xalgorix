@@ -55,6 +55,35 @@ func main() {
 			port = 1337
 		}
 
+		// Daemon mode: re-launch in background
+		if args.daemon {
+			// Build args without -d/--daemon to avoid infinite loop
+			var newArgs []string
+			for _, a := range os.Args[1:] {
+				if a != "-d" && a != "--daemon" {
+					newArgs = append(newArgs, a)
+				}
+			}
+			logFile, err := os.OpenFile("/tmp/xalgorix.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
+				os.Exit(1)
+			}
+			cmd := exec.Command(os.Args[0], newArgs...)
+			cmd.Stdout = logFile
+			cmd.Stderr = logFile
+			cmd.Env = os.Environ()
+			if err := cmd.Start(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start daemon: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Xalgorix running in background (PID: %d)\n", cmd.Process.Pid)
+			fmt.Printf("  Web UI: http://localhost:%d\n", port)
+			fmt.Printf("  Logs:   /tmp/xalgorix.log\n")
+			fmt.Printf("  Stop:   kill %d\n", cmd.Process.Pid)
+			os.Exit(0)
+		}
+
 		fmt.Print(tui.Banner)
 		fmt.Println()
 		fmt.Printf("\n  Xalgorix Web UI starting on port %d...\n", port)
@@ -92,6 +121,7 @@ type cliArgs struct {
 	model       string
 	version     bool
 	update      bool
+	daemon      bool
 	webUI       bool
 	port        int
 }
@@ -126,6 +156,8 @@ func parseArgs() cliArgs {
 			args.webUI = true
 		case "--update", "-up":
 			args.update = true
+		case "--daemon", "-d":
+			args.daemon = true
 		case "--version", "-v":
 			args.version = true
 		case "--help", "-h":
@@ -160,6 +192,7 @@ func printUsage() {
 	fmt.Println("Modes:")
 	fmt.Println("  -w, --web                 Launch the Web UI dashboard")
 	fmt.Println("  -p, --port <port>         Web UI port (default: 1337)")
+	fmt.Println("  -d, --daemon              Run Web UI in background")
 	fmt.Println()
 	fmt.Println("CLI Flags:")
 	fmt.Println("  -t, --target <url>        Target URL, IP, or local path (repeatable)")
