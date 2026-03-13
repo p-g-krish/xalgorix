@@ -265,8 +265,13 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	scanID := ""
+	if s.currentScanDir != "" {
+		scanID = filepath.Base(s.currentScanDir)
+	}
 	json.NewEncoder(w).Encode(map[string]any{
 		"running": s.running,
+		"scan_id": scanID,
 		"vulns":   len(reporting.GetVulnerabilities()),
 	})
 }

@@ -607,14 +607,22 @@
         try {
             const resp = await fetch('/api/status');
             const status = await resp.json();
-            if (status.running === true) {
-                scanRunning = true;
-                toggleButtons(true);
-                startTimer();
-                setStatus('running', 'SCANNING');
-                hideWelcome();
+            if (status.running === true && status.scan_id) {
+                // If URL doesn't match the running scan, update it
+                const currentPath = window.location.pathname.replace('/', '');
+                if (currentPath !== status.scan_id) {
+                    history.replaceState(null, '', '/' + status.scan_id);
+                }
+                // Load the scan data
+                await loadLastScan();
+            } else {
+                // Not running, still try to load if URL has a scan ID
+                await loadLastScan();
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            // Fallback: just try loading from URL
+            await loadLastScan();
+        }
     }
 
     checkServerStatus();
@@ -747,8 +755,6 @@
             console.log('No previous scan to restore');
         }
     }
-
-    loadLastScan();
 
     // ── LLM Provider Change Handler ───────────────────────
     window.onProviderChange = function () {
