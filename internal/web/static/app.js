@@ -608,6 +608,11 @@
             const resp = await fetch('/api/status');
             const status = await resp.json();
             if (status.running === true && status.scan_id) {
+                // Immediately show correct state
+                scanRunning = true;
+                toggleButtons(true);
+                setStatus('running', 'SCANNING');
+                hideWelcome();
                 // If URL doesn't match the running scan, update it
                 const currentPath = window.location.pathname.replace('/', '');
                 if (currentPath !== status.scan_id) {
