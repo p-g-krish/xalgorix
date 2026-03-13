@@ -1126,6 +1126,16 @@ body {
     font-size: 13px;
   }
 
+  .select-field {
+    flex: 1 1 auto;
+    width: 100%;
+    padding: 10px 36px 10px 12px;
+  }
+
+  .instruction-area {
+    min-height: 38px;
+  }
+
   .btn-group {
     flex-direction: row;
     width: 100%;
