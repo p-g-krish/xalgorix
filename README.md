@@ -7,6 +7,7 @@
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Author](https://img.shields.io/badge/Author-@xalgord-00ff88?style=for-the-badge&logo=github&logoColor=white)](https://github.com/xalgord)
 [![License](https://img.shields.io/badge/License-MIT-00ff88?style=for-the-badge)](LICENSE)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/xalgord)
 
 <p><i>Point it at a target. It does the rest.</i></p>
 
