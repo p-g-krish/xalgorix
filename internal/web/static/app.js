@@ -628,6 +628,31 @@
     checkServerStatus();
 
     // ── Load Scan on Page Init (only if URL has a scan hash) ─────
+    function resetUI() {
+        // Clear all JS state
+        iterCount = 0;
+        toolCount = 0;
+        eventCount = 0;
+        vulnCount = 0;
+        toolUsage = {};
+        // Clear DOM
+        document.getElementById('stat-iter').textContent = '0';
+        document.getElementById('stat-tools').textContent = '0';
+        document.getElementById('stat-vulns').textContent = '0';
+        document.getElementById('stat-tokens').textContent = '0';
+        document.getElementById('total-events').textContent = '0';
+        document.getElementById('event-count').textContent = '0 events';
+        document.getElementById('duration').textContent = '0s';
+        document.getElementById('feed-body').innerHTML = '';
+        document.getElementById('vuln-list').innerHTML = '<div class="empty-state">No vulnerabilities found yet</div>';
+        const toolStatsEl = document.getElementById('tool-stats');
+        if (toolStatsEl) toolStatsEl.innerHTML = '<div class="empty-state">No tools called yet</div>';
+        document.getElementById('target-input').value = '';
+        // Remove report button if exists
+        const reportBtn = document.getElementById('btn-report');
+        if (reportBtn) reportBtn.remove();
+    }
+
     async function loadLastScan() {
         const scanId = window.location.pathname.replace('/', '');
         if (!scanId) return; // Root path = clean idle page
@@ -637,6 +662,9 @@
             const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
             const scan = await resp.json();
             if (!scan || !scan.id) return;
+
+            // Reset UI to prevent mixing with previous scan data
+            resetUI();
 
             // Hide welcome message since we have scan data
             hideWelcome();
