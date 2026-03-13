@@ -166,7 +166,8 @@ func loadEnvFile(path string) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Parse KEY=VALUE (strip optional quotes)
+		// Parse KEY=VALUE (strip optional "export " prefix and quotes)
+		line = strings.TrimPrefix(line, "export ")
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
