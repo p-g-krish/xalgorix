@@ -266,6 +266,13 @@ func (a *Agent) buildSystemPrompt(targets []string, instruction string) string {
 5. Minimum 50 iterations for a thorough assessment. Don't rush to finish.
 6. Use notes (add_note) to track discovered endpoints, parameters, and findings. Read notes before each phase.
 
+### Safety Rules — NEVER VIOLATE
+- NEVER run destructive commands: rm -rf, DROP TABLE, DELETE FROM, TRUNCATE, UPDATE, mkfs, dd, format, shutdown, reboot.
+- NEVER modify, delete, or corrupt target data. You are READ-ONLY — test and report, never damage.
+- NEVER run fork bombs, wipe disks, or alter system files.
+- Use SELECT to verify SQL injection — never DROP/DELETE/UPDATE.
+- Use safe payloads: time-based blind SQLi, reflected XSS, SSRF with callback — NOT destructive ones.
+
 ### Parameter & URL Testing Rules  
 7. Test EVERY input parameter you discover: URL params, form fields, headers, cookies, JSON bodies, XML attributes.
 8. For EVERY endpoint found, test ALL HTTP methods: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD.

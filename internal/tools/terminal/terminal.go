@@ -98,6 +98,11 @@ func executeCommand(args map[string]string) (tools.Result, error) {
 		return tools.Result{}, fmt.Errorf("command is required")
 	}
 
+	// Block destructive commands
+	if reason := isBlockedCommand(command); reason != "" {
+		return tools.Result{Output: fmt.Sprintf("[BLOCKED] Destructive command rejected: %s. Xalgorix is read-only — it tests for vulnerabilities without causing damage.", reason)}, nil
+	}
+
 	timeoutSec := 120
 	if t, ok := args["timeout"]; ok {
 		fmt.Sscanf(t, "%d", &timeoutSec)
@@ -270,3 +275,48 @@ func truncate(s string) string {
 	}
 	return s
 }
+
+// blockedPatterns contains destructive commands that must never be executed.
+var blockedPatterns = []struct {
+	pattern string
+	reason  string
+}{
+	{"rm -rf /", "recursive delete of root filesystem"},
+	{"rm -rf /*", "recursive delete of root filesystem"},
+	{"rm -rf ~", "recursive delete of home directory"},
+	{"rm -rf .", "recursive delete of current directory"},
+	{"> /dev/sd", "overwriting disk device"},
+	{"dd if=/dev/zero", "overwriting with zeros"},
+	{"dd if=/dev/random", "overwriting with random data"},
+	{"mkfs", "formatting filesystem"},
+	{"shutdown", "system shutdown"},
+	{"reboot", "system reboot"},
+	{"init 0", "system halt"},
+	{"init 6", "system reboot"},
+	{"halt", "system halt"},
+	{"poweroff", "system poweroff"},
+	{":(){ :|:&};:", "fork bomb"},
+	{"chmod 777 /", "removing all file permissions on root"},
+	{"chown -R", "recursive ownership change"},
+	// SQL destructive statements
+	{"drop table", "SQL DROP TABLE"},
+	{"drop database", "SQL DROP DATABASE"},
+	{"delete from", "SQL DELETE FROM"},
+	{"truncate table", "SQL TRUNCATE TABLE"},
+	{"update ", "SQL UPDATE (use SELECT to verify instead)"},
+	// Python destructive
+	{"shutil.rmtree", "recursive directory removal"},
+	{"os.remove", "file deletion"},
+}
+
+// isBlockedCommand checks if a command matches any blocked pattern.
+func isBlockedCommand(cmd string) string {
+	lower := strings.ToLower(cmd)
+	for _, bp := range blockedPatterns {
+		if strings.Contains(lower, bp.pattern) {
+			return bp.reason
+		}
+	}
+	return ""
+}
+
