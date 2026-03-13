@@ -15,7 +15,7 @@ import (
 // Config holds all Xalgorix configuration.
 type Config struct {
 	// LLM settings
-	LLM             string // XALGORIX_LLM — model name (e.g. "xalgorix/gpt-5", "openai/gpt-4o")
+	LLM             string // XALGORIX_LLM — model name (e.g. "openai/gpt-5.4", "anthropic/claude-sonnet-4.6")
 	APIBase         string // XALGORIX_API_BASE — API endpoint
 	APIKey          string // XALGORIX_API_KEY — API key
 	ReasoningEffort string // XALGORIX_REASONING_EFFORT — "low", "medium", "high"
@@ -100,19 +100,13 @@ func load() *Config {
 	}
 }
 
-// ResolveModel resolves a model name, handling xalgorix/ prefix.
+// ResolveModel resolves a model name.
 // Returns (apiModel, displayModel).
 func (c *Config) ResolveModel() (string, string) {
 	model := c.LLM
 	if model == "" {
 		return "", ""
 	}
-
-	if strings.HasPrefix(model, "xalgorix/") {
-		base := strings.TrimPrefix(model, "xalgorix/")
-		return "openai/" + base, model
-	}
-
 	return model, model
 }
 
@@ -127,12 +121,7 @@ func (c *Config) WorkspacePath(rel string) string {
 // Validate checks that required configuration is present.
 func (c *Config) Validate() error {
 	if c.LLM == "" {
-		return fmt.Errorf("XALGORIX_LLM is required. Set it to a model like 'openai/gpt-4o' or 'xalgorix/gpt-5'")
-	}
-
-	// Auto-set API base for xalgorix/ models
-	if strings.HasPrefix(c.LLM, "xalgorix/") && c.APIBase == "" {
-		return fmt.Errorf("XALGORIX_API_BASE is required when using xalgorix/ models")
+		return fmt.Errorf("XALGORIX_LLM is required. Set it to a model like 'openai/gpt-5.4' or 'anthropic/claude-sonnet-4.6'")
 	}
 
 	return nil
