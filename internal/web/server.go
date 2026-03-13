@@ -471,9 +471,10 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 
 						// Discord: vulnerability found
 						sevColor := 0xef4444 // red for critical/high
-						if vs.Severity == "medium" {
+						switch vs.Severity {
+						case "medium":
 							sevColor = 0xd97706
-						} else if vs.Severity == "low" || vs.Severity == "info" {
+						case "low", "info":
 							sevColor = 0x3b82f6
 						}
 						// Build detailed description with all available fields
