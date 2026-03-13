@@ -94,15 +94,29 @@ sudo mv xalgorix /usr/local/bin/
 
 ### Configure
 
+Create `~/.xalgorix.env` (recommended — works with `sudo`):
+
 ```bash
-# Required — LLM provider
+# ~/.xalgorix.env
+XALGORIX_LLM=openai/gpt-5.4
+XALGORIX_API_KEY=sk-your-key-here
+XALGORIX_API_BASE=https://api.openai.com/v1
+
+# Optional — Discord notifications
+XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/your-webhook-url
+```
+
+<details>
+<summary>Or use environment variables</summary>
+
+```bash
 export XALGORIX_LLM="openai/gpt-5.4"              # or anthropic/claude-sonnet-4.6, deepseek/deepseek-v4, etc.
 export XALGORIX_API_KEY="sk-your-key-here"
 export XALGORIX_API_BASE="https://api.openai.com/v1"  # provider API base
-
-# Optional — Discord notifications
 export XALGORIX_DISCORD_WEBHOOK="https://discord.com/api/webhooks/your-webhook-url"
 ```
+
+</details>
 
 ### Run
 

@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,8 +55,17 @@ func Get() *Config {
 }
 
 // load reads all configuration from environment variables with defaults.
+// It first loads env files so config works even under sudo.
 func load() *Config {
+	// Load env files (lower priority first, later files override)
+	loadEnvFile("/etc/xalgorix.env")
+	// Try the actual user's home (works even under sudo)
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		loadEnvFile(filepath.Join("/home", sudoUser, ".xalgorix.env"))
+	}
 	home, _ := os.UserHomeDir()
+	loadEnvFile(filepath.Join(home, ".xalgorix.env"))
+
 	xalgorixHome := filepath.Join(home, ".xalgorix")
 
 	cwd, _ := os.Getwd()
@@ -150,4 +160,35 @@ func envOrBool(key string, fallback bool) bool {
 		return v == "1" || v == "true" || v == "yes"
 	}
 	return fallback
+}
+
+// loadEnvFile reads a KEY=VALUE env file and sets env vars that aren't already set.
+func loadEnvFile(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return // File doesn't exist, skip silently
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Parse KEY=VALUE (strip optional quotes)
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		// Strip surrounding quotes
+		value = strings.Trim(value, "\"'")
+		// Only set if not already defined in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
 }
