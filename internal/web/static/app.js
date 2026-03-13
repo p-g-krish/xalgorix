@@ -253,32 +253,65 @@
         vulns.forEach((v) => {
             const li = document.createElement('li');
             li.className = 'vuln-item';
-
-            // Build details HTML — only show non-empty fields
-            const details = [];
-            if (v.description) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Description</span><span class="vuln-value">${esc(v.description)}</span></div>`);
-            if (v.endpoint) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Endpoint</span><code class="vuln-code">${esc(v.endpoint)}</code></div>`);
-            if (v.method) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Method</span><span class="vuln-value">${esc(v.method)}</span></div>`);
-            if (v.cve) details.push(`<div class="vuln-detail-row"><span class="vuln-label">CVE</span><span class="vuln-value">${esc(v.cve)}</span></div>`);
-            if (v.cvss) details.push(`<div class="vuln-detail-row"><span class="vuln-label">CVSS</span><span class="vuln-value vuln-cvss">${v.cvss.toFixed(1)}</span></div>`);
-            if (v.impact) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Impact</span><span class="vuln-value">${esc(v.impact)}</span></div>`);
-            if (v.technical_analysis) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Technical Analysis</span><span class="vuln-value">${esc(v.technical_analysis)}</span></div>`);
-            if (v.poc_description) details.push(`<div class="vuln-detail-row"><span class="vuln-label">PoC</span><span class="vuln-value">${esc(v.poc_description)}</span></div>`);
-            if (v.poc_script) details.push(`<div class="vuln-detail-row"><span class="vuln-label">PoC Script</span><pre class="vuln-pre">${esc(v.poc_script)}</pre></div>`);
-            if (v.remediation) details.push(`<div class="vuln-detail-row"><span class="vuln-label">Remediation</span><span class="vuln-value">${esc(v.remediation)}</span></div>`);
-
             li.innerHTML = `
-                <div class="vuln-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <div class="vuln-header" onclick="openVulnModal(this)">
                     <span class="vuln-severity ${v.severity.toLowerCase()}"></span>
                     <span class="vuln-title">${esc(v.title)}</span>
                     <span class="vuln-badge ${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</span>
-                    <span class="vuln-expand-icon">▸</span>
                 </div>
-                <div class="vuln-details">${details.join('') || '<div class="vuln-detail-row"><span class="vuln-value dim">No additional details available</span></div>'}</div>
             `;
+            // Store vuln data on the element
+            li.querySelector('.vuln-header')._vulnData = v;
             list.appendChild(li);
         });
     }
+
+    // Open vulnerability detail modal
+    window.openVulnModal = function(headerEl) {
+        const v = headerEl._vulnData;
+        if (!v) return;
+
+        const modal = document.getElementById('vuln-modal');
+        const content = document.getElementById('vuln-modal-content');
+
+        // Build modal HTML
+        let html = `
+            <div class="vuln-modal-title">
+                <span class="vuln-severity ${v.severity.toLowerCase()}" style="width:14px;height:14px"></span>
+                <h3>${esc(v.title)}</h3>
+            </div>
+            <div class="vuln-modal-meta">
+                <div class="vuln-modal-meta-item">
+                    <div class="vuln-modal-meta-label">Severity</div>
+                    <div class="vuln-modal-meta-value severity-${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</div>
+                </div>
+                <div class="vuln-modal-meta-item">
+                    <div class="vuln-modal-meta-label">CVSS Score</div>
+                    <div class="vuln-modal-meta-value severity-${v.severity.toLowerCase()}">${v.cvss ? v.cvss.toFixed(1) : 'N/A'}</div>
+                </div>
+                ${v.method ? `<div class="vuln-modal-meta-item"><div class="vuln-modal-meta-label">Method</div><div class="vuln-modal-meta-value">${esc(v.method)}</div></div>` : ''}
+                ${v.cve ? `<div class="vuln-modal-meta-item"><div class="vuln-modal-meta-label">CVE</div><div class="vuln-modal-meta-value vuln-modal-code">${esc(v.cve)}</div></div>` : ''}
+            </div>
+        `;
+
+        if (v.endpoint) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🔗 Endpoint</div><div class="vuln-modal-section-value"><code class="vuln-modal-code">${esc(v.endpoint)}</code></div></div>`;
+        if (v.description) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">📝 Description</div><div class="vuln-modal-section-value">${esc(v.description)}</div></div>`;
+        if (v.impact) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">💥 Impact</div><div class="vuln-modal-section-value">${esc(v.impact)}</div></div>`;
+        if (v.technical_analysis) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🔬 Technical Analysis</div><div class="vuln-modal-section-value">${esc(v.technical_analysis)}</div></div>`;
+        if (v.poc_description) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🧪 Proof of Concept</div><div class="vuln-modal-section-value">${esc(v.poc_description)}</div></div>`;
+        if (v.poc_script) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">📜 PoC Script</div><pre class="vuln-modal-pre">${esc(v.poc_script)}</pre></div>`;
+        if (v.remediation) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🛡️ Remediation</div><div class="vuln-modal-section-value">${esc(v.remediation)}</div></div>`;
+
+        content.innerHTML = html;
+        modal.style.display = 'flex';
+    };
+
+    // Close modal on ESC key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.getElementById('vuln-modal').style.display = 'none';
+        }
+    });
 
     function updateToolStats() {
         const container = document.getElementById('tool-stats');
