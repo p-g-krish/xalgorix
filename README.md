@@ -30,7 +30,7 @@ Xalgorix is a fully autonomous AI pentesting agent that uses LLMs to drive compr
 - **Liquid Glass Web UI** — Dark mode dashboard with frosted glass panels, real-time WebSocket feed, live clock, and token tracking
 - **Persistent Scan Data** — Scans saved to `~/xalgorix-data/scans/` with 30-day retention, survives page refreshes and server restarts
 - **Discord Webhook Notifications** — Real-time alerts for scan start, vulnerability found, and scan finished
-- **Multi-LLM Provider Support** — Switch between MiniMax, OpenAI, DeepSeek, Anthropic, Google, Groq, Ollama, or custom providers
+- **Multi-LLM Provider Support** — Switch between OpenAI, Anthropic, DeepSeek, Google, Groq, Ollama, MiniMax, or custom providers
 - **Scan Modes** — Single site or wildcard (subdomain enumeration) scanning
 - **Multi-Target Queue** — Upload a targets file for sequential auto-scanning
 - **Vulnerability Reporting** — Structured JSON reports with CVSS scores, PoC scripts, and remediation steps
@@ -73,7 +73,7 @@ internal/
 ### Prerequisites
 
 - Go 1.25+
-- An OpenAI-compatible LLM API (MiniMax, OpenAI, DeepSeek, Anthropic, etc.)
+- An OpenAI-compatible LLM API (OpenAI, Anthropic, DeepSeek, Ollama, etc.)
 - Security tools are auto-installed, but pre-installing recommended: `nmap`, `nuclei`, `subfinder`, `httpx`
 
 ### Install
@@ -89,9 +89,9 @@ sudo cp xalgorix /usr/local/bin/
 
 ```bash
 # Required — LLM provider
-export XALGORIX_LLM="minimax/MiniMax-M2.5"
+export XALGORIX_LLM="openai/gpt-4o"              # or anthropic/claude-sonnet-4, deepseek/deepseek-chat, etc.
 export XALGORIX_API_KEY="sk-your-key-here"
-export XALGORIX_API_BASE="https://api.minimax.io/"
+export XALGORIX_API_BASE="https://api.openai.com/v1"  # provider API base
 
 # Optional — Discord notifications
 export XALGORIX_DISCORD_WEBHOOK="https://discord.com/api/webhooks/your-webhook-url"
@@ -188,7 +188,7 @@ All configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XALGORIX_LLM` | *(required)* | Model name (e.g. `minimax/MiniMax-M2.5`) |
+| `XALGORIX_LLM` | *(required)* | Model name (e.g. `openai/gpt-4o`) |
 | `XALGORIX_API_KEY` | *(required)* | API key |
 | `XALGORIX_API_BASE` | `https://api.openai.com/v1` | API base URL |
 | `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL for notifications |
@@ -244,13 +244,13 @@ Works with any OpenAI-compatible chat completions API:
 
 | Provider | Model Example | Tested |
 |----------|--------------|--------|
-| MiniMax | `minimax/MiniMax-M2.5` | ✅ |
 | OpenAI | `openai/gpt-4o` | ✅ |
+| Anthropic | `anthropic/claude-sonnet-4` | ✅ |
 | DeepSeek | `deepseek/deepseek-chat` | ✅ |
 | Google | `google/gemini-2.5-flash` | ✅ |
 | Groq | `groq/llama-3.3-70b` | ✅ |
-| Anthropic | `anthropic/claude-3.5-sonnet` | ⚠️ via proxy |
-| Local | `ollama/llama3` | ⚠️ varies |
+| MiniMax | `minimax/MiniMax-M2.5` | ✅ |
+| Ollama | `ollama/llama3` | ✅ (local) |
 
 ## License
 
