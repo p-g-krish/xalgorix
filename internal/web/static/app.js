@@ -408,13 +408,22 @@
     }
 
     // ── Timer ──────────────────────────────────────────────
-    function startTimer() {
-        scanStart = Date.now();
+    function formatDuration(totalSeconds) {
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    function startTimer(startFrom) {
+        scanStart = startFrom ? startFrom.getTime() : Date.now();
+        // Show immediately
+        const elapsed = Math.floor((Date.now() - scanStart) / 1000);
+        document.getElementById('duration').textContent = formatDuration(elapsed);
         timerInterval = setInterval(() => {
             const elapsed = Math.floor((Date.now() - scanStart) / 1000);
-            const m = Math.floor(elapsed / 60);
-            const s = elapsed % 60;
-            document.getElementById('duration').textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
+            document.getElementById('duration').textContent = formatDuration(elapsed);
         }, 1000);
     }
 
@@ -659,7 +668,7 @@
             (scan.events || []).filter(e => e.type === 'tool_call').forEach(e => {
                 toolUsage[e.tool_name] = (toolUsage[e.tool_name] || 0) + 1;
             });
-            renderToolUsage();
+            updateToolStats();
 
             // Set status — check actual server state, not stale scan record
             const badge = document.getElementById('status-badge');
@@ -677,11 +686,26 @@
                 badge.className = 'status-badge running';
                 scanRunning = true;
                 toggleButtons(true);
-                startTimer();
+                // Resume timer from original start time
+                startTimer(scan.started_at ? new Date(scan.started_at) : null);
             } else if (scan.status === 'finished') {
                 statusText.textContent = 'COMPLETED';
+                // Show final elapsed time for completed scans
+                if (scan.started_at) {
+                    const start = new Date(scan.started_at);
+                    const end = scan.finished_at ? new Date(scan.finished_at) : new Date();
+                    const elapsed = Math.floor((end - start) / 1000);
+                    document.getElementById('duration').textContent = formatDuration(elapsed);
+                }
             } else {
                 statusText.textContent = 'IDLE';
+                // Still show elapsed time from saved data
+                if (scan.started_at) {
+                    const start = new Date(scan.started_at);
+                    const end = scan.finished_at ? new Date(scan.finished_at) : new Date();
+                    const elapsed = Math.floor((end - start) / 1000);
+                    document.getElementById('duration').textContent = formatDuration(elapsed);
+                }
             }
 
             // Show target in input
