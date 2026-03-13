@@ -133,6 +133,40 @@ sudo xalgorix --target 192.168.1.0/24 --model openai/gpt-4o
 
 > **Tip:** Run as `root` for full tool access (nmap SYN scan, package installation, etc.)
 
+### Custom Instructions
+
+Use the `--instruction` flag (CLI) or the instructions textarea (Web UI) to guide the agent. Here are some examples:
+
+```text
+# Authenticated Testing — provide credentials
+Use these credentials for authenticated testing:
+  Email: admin@example.com
+  Password: P@ssw0rd123
+Login at https://example.com/login and test all authenticated endpoints.
+
+# Scope Restrictions
+Only test *.example.com subdomains. Do NOT test third-party domains or CDNs.
+
+# Focus on Specific Vulnerabilities
+Focus on SQL Injection, IDOR, and authentication bypass. Skip XSS and CSRF.
+
+# API Testing
+The API docs are at https://example.com/api/docs. Test all API endpoints
+for broken access control using these API keys:
+  Admin:  Bearer eyJhbG...
+  User:   Bearer eyJibW...
+
+# Bug Bounty Program Rules
+This is a HackerOne program. Out of scope: DoS, social engineering, phishing.
+Only report P1-P3 severity bugs. Rate limiting is in place — keep requests slow.
+
+# Internal Network
+Scan the 10.0.0.0/24 subnet. Focus on exposed services, default credentials,
+and unpatched CVEs. Check for SMB shares and open databases.
+```
+
+> **Tip:** The more context you give, the smarter the agent's testing strategy will be.
+
 ## Web UI
 
 The liquid glass dark mode dashboard provides:
