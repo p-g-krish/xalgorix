@@ -1,0 +1,36 @@
+# Binaries
+xalgorix
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Scan output / data
+*.txt
+*.json
+!go.sum
+!package.json
+xalgorix-data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+*.test
+*.out
+__debug_bin*
+
+# Temp
+tmp/
+*.log
+nohup.out

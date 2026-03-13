@@ -1,0 +1,153 @@
+// Package config provides configuration management for Xalgorix.
+// All configuration is loaded from environment variables with XALGORIX_ prefix.
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+)
+
+// Config holds all Xalgorix configuration.
+type Config struct {
+	// LLM settings
+	LLM             string // XALGORIX_LLM — model name (e.g. "xalgorix/gpt-5", "openai/gpt-4o")
+	APIBase         string // XALGORIX_API_BASE — API endpoint
+	APIKey          string // XALGORIX_API_KEY — API key
+	ReasoningEffort string // XALGORIX_REASONING_EFFORT — "low", "medium", "high"
+	LLMMaxRetries   int    // XALGORIX_LLM_MAX_RETRIES
+	MemCompTimeout  int    // XALGORIX_MEMORY_COMPRESSOR_TIMEOUT
+
+	// Runtime settings
+	RuntimeBackend string // XALGORIX_RUNTIME_BACKEND — always "native"
+	Workspace      string // XALGORIX_WORKSPACE — workspace root dir
+	DisableBrowser bool   // XALGORIX_DISABLE_BROWSER
+	MaxIterations  int    // XALGORIX_MAX_ITERATIONS — 0 = unlimited
+
+	// Caido proxy
+	CaidoPort     int    // CAIDO_PORT
+	CaidoAPIToken string // CAIDO_API_TOKEN
+
+	// Telemetry
+	Telemetry    bool   // XALGORIX_TELEMETRY
+	OTelEndpoint string // XALGORIX_OTEL_ENDPOINT
+
+	// Paths
+	HomeDir   string // ~/.xalgorix
+	SkillsDir string // embedded or local skills directory
+}
+
+var (
+	globalConfig *Config
+	configOnce   sync.Once
+)
+
+// Get returns the global configuration singleton.
+func Get() *Config {
+	configOnce.Do(func() {
+		globalConfig = load()
+	})
+	return globalConfig
+}
+
+// load reads all configuration from environment variables with defaults.
+func load() *Config {
+	home, _ := os.UserHomeDir()
+	xalgorixHome := filepath.Join(home, ".xalgorix")
+
+	cwd, _ := os.Getwd()
+	workspace := envOr("XALGORIX_WORKSPACE", cwd)
+
+	return &Config{
+		// LLM
+		LLM:             envOr("XALGORIX_LLM", ""),
+		APIBase:         envOr("XALGORIX_API_BASE", ""),
+		APIKey:          envOr("XALGORIX_API_KEY", ""),
+		ReasoningEffort: envOr("XALGORIX_REASONING_EFFORT", "high"),
+		LLMMaxRetries:   envOrInt("XALGORIX_LLM_MAX_RETRIES", 5),
+		MemCompTimeout:  envOrInt("XALGORIX_MEMORY_COMPRESSOR_TIMEOUT", 30),
+
+		// Runtime
+		RuntimeBackend: "native", // Always native in Go version
+		Workspace:      workspace,
+		DisableBrowser: envOrBool("XALGORIX_DISABLE_BROWSER", false),
+		MaxIterations:  envOrInt("XALGORIX_MAX_ITERATIONS", 0),
+
+		// Caido
+		CaidoPort:     envOrInt("CAIDO_PORT", 0), // 0 = auto-detect
+		CaidoAPIToken: envOr("CAIDO_API_TOKEN", ""),
+
+		// Telemetry
+		Telemetry:    envOrBool("XALGORIX_TELEMETRY", true),
+		OTelEndpoint: envOr("XALGORIX_OTEL_ENDPOINT", ""),
+
+		// Paths
+		HomeDir:   xalgorixHome,
+		SkillsDir: filepath.Join(xalgorixHome, "skills"),
+	}
+}
+
+// ResolveModel resolves a model name, handling xalgorix/ prefix.
+// Returns (apiModel, displayModel).
+func (c *Config) ResolveModel() (string, string) {
+	model := c.LLM
+	if model == "" {
+		return "", ""
+	}
+
+	if strings.HasPrefix(model, "xalgorix/") {
+		base := strings.TrimPrefix(model, "xalgorix/")
+		return "openai/" + base, model
+	}
+
+	return model, model
+}
+
+// WorkspacePath resolves a path relative to the workspace.
+func (c *Config) WorkspacePath(rel string) string {
+	if filepath.IsAbs(rel) {
+		return rel
+	}
+	return filepath.Join(c.Workspace, rel)
+}
+
+// Validate checks that required configuration is present.
+func (c *Config) Validate() error {
+	if c.LLM == "" {
+		return fmt.Errorf("XALGORIX_LLM is required. Set it to a model like 'openai/gpt-4o' or 'xalgorix/gpt-5'")
+	}
+
+	// Auto-set API base for xalgorix/ models
+	if strings.HasPrefix(c.LLM, "xalgorix/") && c.APIBase == "" {
+		return fmt.Errorf("XALGORIX_API_BASE is required when using xalgorix/ models")
+	}
+
+	return nil
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func envOrInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
+func envOrBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		v = strings.ToLower(v)
+		return v == "1" || v == "true" || v == "yes"
+	}
+	return fallback
+}

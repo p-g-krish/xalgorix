@@ -1,0 +1,270 @@
+// Package llm provides the LLM API client for Xalgorix.
+package llm
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/xalgord/xalgorix/internal/config"
+)
+
+// Message represents a chat message.
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// StreamChunk is a piece of streaming response.
+type StreamChunk struct {
+	Content string
+	Done    bool
+	Err     error
+}
+
+// Client is the LLM API client.
+type Client struct {
+	cfg        *config.Config
+	httpClient *http.Client
+	apiModel   string
+	mu         sync.Mutex
+	totalIn    int
+	totalOut   int
+}
+
+// TokenUsage holds cumulative token counts.
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// GetTokens returns cumulative token usage.
+func (c *Client) GetTokens() (promptTokens, completionTokens, totalTokens int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.totalIn, c.totalOut, c.totalIn + c.totalOut
+}
+
+// NewClient creates a new LLM client.
+func NewClient(cfg *config.Config) *Client {
+	apiModel, _ := cfg.ResolveModel()
+	return &Client{
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: 5 * time.Minute},
+		apiModel:   apiModel,
+	}
+}
+
+// chatRequest is the OpenAI-compatible chat completion request.
+type chatRequest struct {
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	Stream      bool      `json:"stream"`
+	Temperature float64   `json:"temperature,omitempty"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
+}
+
+// chatChoice represents a response choice.
+type chatChoice struct {
+	Delta   struct{ Content string } `json:"delta"`
+	Message struct{ Content string } `json:"message"`
+}
+
+// chatResponse is the OpenAI-compatible response.
+type chatResponse struct {
+	Choices []chatChoice `json:"choices"`
+	Usage   *TokenUsage  `json:"usage,omitempty"`
+}
+
+// resolveEndpoint returns the full chat completions URL and clean model name.
+// Handles provider prefixes like "minimax/", "openai/", "anthropic/", etc.
+// Auto-appends /v1/chat/completions if the base doesn't already contain /v1.
+func (c *Client) resolveEndpoint() (string, string) {
+	apiBase := c.cfg.APIBase
+	if apiBase == "" {
+		apiBase = "https://api.openai.com/v1"
+	}
+	apiBase = strings.TrimRight(apiBase, "/")
+
+	// Auto-append /v1 if not present
+	if !strings.HasSuffix(apiBase, "/v1") && !strings.Contains(apiBase, "/v1/") {
+		apiBase += "/v1"
+	}
+
+	url := apiBase + "/chat/completions"
+
+	// Strip provider prefix from model name (e.g. "minimax/MiniMax-M2.5" → "MiniMax-M2.5")
+	model := c.apiModel
+	if idx := strings.Index(model, "/"); idx >= 0 {
+		model = model[idx+1:]
+	}
+
+	return url, model
+}
+
+// Chat sends a non-streaming chat request and returns the full response.
+func (c *Client) Chat(messages []Message) (string, error) {
+	return c.chatWithRetry(messages, false)
+}
+
+func (c *Client) chatWithRetry(messages []Message, _ bool) (string, error) {
+	maxRetries := c.cfg.LLMMaxRetries
+	var lastErr error
+
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt*2) * time.Second)
+		}
+
+		result, err := c.doChat(messages)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+	}
+
+	return "", fmt.Errorf("LLM request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// ChatStream sends a streaming chat request and returns a channel of chunks.
+func (c *Client) ChatStream(messages []Message) <-chan StreamChunk {
+	ch := make(chan StreamChunk, 64)
+
+	go func() {
+		defer close(ch)
+
+		url, model := c.resolveEndpoint()
+
+		reqBody := chatRequest{
+			Model:    model,
+			Messages: messages,
+			Stream:   true,
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			ch <- StreamChunk{Err: err}
+			return
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		if c.cfg.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			ch <- StreamChunk{Err: fmt.Errorf("request failed: %w", err)}
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			ch <- StreamChunk{Err: fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))}
+			return
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		// Increase scanner buffer for large SSE chunks
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				ch <- StreamChunk{Done: true}
+				return
+			}
+
+			var sseResp chatResponse
+			if err := json.Unmarshal([]byte(data), &sseResp); err != nil {
+				continue
+			}
+
+			// Track token usage from streaming (often in the final chunk)
+			if sseResp.Usage != nil {
+				c.mu.Lock()
+				c.totalIn += sseResp.Usage.PromptTokens
+				c.totalOut += sseResp.Usage.CompletionTokens
+				c.mu.Unlock()
+			}
+
+			if len(sseResp.Choices) > 0 {
+				content := sseResp.Choices[0].Delta.Content
+				if content != "" {
+					ch <- StreamChunk{Content: content}
+				}
+			}
+		}
+
+		ch <- StreamChunk{Done: true}
+	}()
+
+	return ch
+}
+
+// doChat performs a single non-streaming API call.
+func (c *Client) doChat(messages []Message) (string, error) {
+	url, model := c.resolveEndpoint()
+
+	reqBody := chatRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   false,
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var chatResp chatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	// Track token usage
+	if chatResp.Usage != nil {
+		c.mu.Lock()
+		c.totalIn += chatResp.Usage.PromptTokens
+		c.totalOut += chatResp.Usage.CompletionTokens
+		c.mu.Unlock()
+	}
+
+	return chatResp.Choices[0].Message.Content, nil
+}
