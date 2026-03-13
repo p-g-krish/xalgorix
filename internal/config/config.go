@@ -28,6 +28,10 @@ type Config struct {
 	DisableBrowser bool   // XALGORIX_DISABLE_BROWSER
 	MaxIterations  int    // XALGORIX_MAX_ITERATIONS — 0 = unlimited
 
+	// Rate limiting & API settings
+	RateLimitRequests int // XALGORIX_RATE_LIMIT_REQUESTS — requests per window
+	RateLimitWindow   int // XALGORIX_RATE_LIMIT_WINDOW — window in seconds
+
 	// Caido proxy
 	CaidoPort     int    // CAIDO_PORT
 	CaidoAPIToken string // CAIDO_API_TOKEN
@@ -85,6 +89,10 @@ func load() *Config {
 		Workspace:      workspace,
 		DisableBrowser: envOrBool("XALGORIX_DISABLE_BROWSER", false),
 		MaxIterations:  envOrInt("XALGORIX_MAX_ITERATIONS", 0),
+
+		// Rate limiting (defaults: 60 requests per 60 seconds)
+		RateLimitRequests: envOrInt("XALGORIX_RATE_LIMIT_REQUESTS", 60),
+		RateLimitWindow:   envOrInt("XALGORIX_RATE_LIMIT_WINDOW", 60),
 
 		// Caido
 		CaidoPort:     envOrInt("CAIDO_PORT", 0), // 0 = auto-detect

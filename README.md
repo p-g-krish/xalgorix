@@ -22,8 +22,11 @@ Xalgorix is a fully autonomous AI pentesting agent that uses LLMs to drive compr
 - **Autonomous Agent Loop** — LLM-driven iterative scanning with tool calls parsed from XML
 - **20 Critical Rules** — Persistence & bypass rules, parameter testing, hidden param discovery, vulnerability chaining
 - **Auto-Install Missing Tools** — Detects `command not found`, resolves the package, installs it, and retries (70+ tool→package mappings)
+- **Encoding Bypass Detection** — Detects base64, hex, and URL-encoded malicious commands
+- **Circuit Breaker** — Automatically blocks failing tools after 5 consecutive failures (60s recovery)
 - **Comprehensive Recon Toolset** — subfinder, findomain, assetfinder, gospider, gau, waymore, paramspider, arjun, and more
-- **Liquid Glass Web UI** — Dark mode dashboard with frosted glass panels, real-time WebSocket feed, live clock, and token tracking
+- **Cyber Glass Web UI** — Dark mode dashboard with cyber green accents, real-time WebSocket feed, live clock, and token tracking
+- **Scan Queue Persistence** — Queue state saved to disk, can resume interrupted scans after server restart
 - **Persistent Scan Data** — Scans saved to `~/xalgorix-data/scans/` with 30-day retention, survives page refreshes and server restarts
 - **Discord Webhook Notifications** — Real-time alerts for scan start, vulnerability found, and scan finished
 - **Multi-LLM Provider Support** — Switch between OpenAI, Anthropic, DeepSeek, Google, Groq, Ollama, MiniMax, or custom providers
@@ -32,20 +35,25 @@ Xalgorix is a fully autonomous AI pentesting agent that uses LLMs to drive compr
 - **Vulnerability Reporting** — Structured JSON reports with CVSS scores, PoC scripts, and remediation steps
 - **PDF Pentest Reports** — Professional PDF reports auto-generated on scan completion
 - **Safety Guardrails** — Destructive commands (rm -rf, DROP TABLE, DELETE, etc.) are blocked at the terminal level
+- **Encoding Bypass Protection** — Detects base64, hex, and URL-encoded command attempts
 - **Zero False Positives** — Agent manually verifies every finding before reporting
 - **Multi-Agent Support** — Spawn sub-agents for parallelized task delegation
 - **Browser Automation** — Headless Chromium via go-rod for dynamic page testing
 - **Real-Time Token Counter** — Tracks LLM token usage (K/M format) across iterations
 - **Config File Support** — `~/.xalgorix.env` auto-loaded, works with `sudo`
+- **Rate Limiting** — Configurable via UI or environment variables (default: 100 req/60s)
 - **Self-Update** — `xalgorix -up` updates to the latest version
 - **Daemon Mode** — `xalgorix --web -d` runs in background
 - **Mobile Responsive** — Web UI works on tablet and phone screens
+- **WebSocket Auto-Reconnect** — Exponential backoff reconnection with status indicator
+- **Better Error Messages** — Helpful suggestions when tools fail
 - **11 Built-in Tools** — Terminal, Python, browser, file editor, web search, HTTP proxy, Notes, and more
 
 ## Architecture
 
 ```
 cmd/xalgorix/           CLI entrypoint (flags, web/CLI mode)
+├── build.sh            Build script with VCS handling
 internal/
 ├── agent/              Core agent loop (LLM → parse → execute → repeat)
 │                       20 critical rules, 20-phase methodology
@@ -54,9 +62,9 @@ internal/
 │   ├── client.go       OpenAI-compatible API client (streaming + token tracking)
 │   └── parser.go       Multi-format XML tool call parser
 ├── tools/
-│   ├── registry.go     Tool registry + parameter validation
-│   ├── terminal/       Shell commands with auto-install
-│   ├── python/         Python subprocess execution
+│   ├── registry.go     Tool registry + parameter validation + circuit breaker
+│   ├── terminal/       Shell commands with auto-install + encoding detection
+│   ├── python/        Python subprocess execution
 │   ├── browser/        Headless Chromium automation (go-rod)
 │   ├── fileedit/       File viewing, editing, listing, searching
 │   ├── proxy/          Caido HTTP proxy integration
@@ -68,7 +76,10 @@ internal/
 ├── tui/                Terminal UI (CLI mode)
 └── web/
     ├── server.go       HTTP + WebSocket server, scan persistence, Discord webhook
-    └── static/         Embedded HTML/CSS/JS dashboard (liquid glass theme)
+    │                   - Rate limiting middleware
+    │   - Queue state persistence
+    │   - Circuit breaker integration
+    └── static/         Embedded HTML/CSS/JS dashboard (cyber glass theme)
 ```
 
 ## Quick Start
@@ -93,8 +104,8 @@ go install github.com/xalgord/xalgorix/cmd/xalgorix@latest
 ```bash
 git clone https://github.com/xalgord/xalgorix.git
 cd xalgorix
-go build -ldflags "-s -w" -o xalgorix ./cmd/xalgorix/
-sudo mv xalgorix /usr/local/bin/
+./build.sh                 # Uses build.sh (auto VCS handling)
+sudo ./build.sh --install  # Build and install
 ```
 
 </details>
@@ -105,22 +116,28 @@ Create `~/.xalgorix.env` (recommended — works with `sudo`):
 
 ```bash
 # ~/.xalgorix.env
-XALGORIX_LLM=openai/gpt-5.4
-XALGORIX_API_KEY=sk-your-key-here
-XALGORIX_API_BASE=https://api.openai.com/v1
+XALGORIX_LLM=minimax/MiniMax-M2.5
+XALGORIX_API_KEY=your-key-here
+XALGORIX_API_BASE=https://api.minimax.io/
 
 # Optional — Discord notifications
 XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/your-webhook-url
+
+# Optional — Rate limiting (default: 100 requests per 60 seconds)
+XALGORIX_RATE_LIMIT_REQUESTS=100
+XALGORIX_RATE_LIMIT_WINDOW=60
 ```
 
 <details>
 <summary>Or use environment variables</summary>
 
 ```bash
-export XALGORIX_LLM="openai/gpt-5.4"              # or anthropic/claude-sonnet-4.6, deepseek/deepseek-v4, etc.
+export XALGORIX_LLM="minimax/MiniMax-M2.5"              # or openai/gpt-5.4, anthropic/claude-sonnet-4.6, etc.
 export XALGORIX_API_KEY="sk-your-key-here"
-export XALGORIX_API_BASE="https://api.openai.com/v1"  # provider API base
+export XALGORIX_API_BASE="https://api.minimax.io/"      # provider API base
 export XALGORIX_DISCORD_WEBHOOK="https://discord.com/api/webhooks/your-webhook-url"
+export XALGORIX_RATE_LIMIT_REQUESTS=100
+export XALGORIX_RATE_LIMIT_WINDOW=60
 ```
 
 </details>
@@ -135,7 +152,7 @@ sudo xalgorix --web --port 8080        # custom port
 # CLI mode
 sudo xalgorix --target https://example.com
 sudo xalgorix --target https://example.com --instruction "Focus on SQLi and XSS"
-sudo xalgorix --target 192.168.1.0/24 --model openai/gpt-4o
+sudo xalgorix --target 192.168.1.0/24 --model minimax/MiniMax-M2.5
 ```
 
 > **Tip:** Run as `root` for full tool access (nmap SYN scan, package installation, etc.)
@@ -176,7 +193,7 @@ and unpatched CVEs. Check for SMB shares and open databases.
 
 ## Web UI
 
-The liquid glass dark mode dashboard provides:
+The cyber glass dark mode dashboard provides:
 
 | Feature | Description |
 |---------|-------------|
@@ -185,11 +202,25 @@ The liquid glass dark mode dashboard provides:
 | **Multi-Target** | Upload a file with one target per line |
 | **Custom Instructions** | Textarea or file upload for extra directives |
 | **LLM Provider Switching** | Dropdown to switch between providers at runtime |
+| **Rate Limiting** | Configurable via UI (requests/window) |
 | **Discord Notifications** | Paste a webhook URL for scan/vuln/completion alerts |
 | **Vulnerability Cards** | Severity-colored cards with CVSS scores (real-time) |
 | **Token Counter** | Real-time LLM token usage display (K/M format) |
 | **Persistent Scans** | Scan data saved to disk, survives page refreshes |
-| **Live Clock & Animations** | Real-time clock, breathing icons, scan pulse |
+| **Queue Resume** | Recover interrupted scans after server restart |
+| **Connection Status** | WebSocket status indicator (green/yellow/red dot) |
+| **Live Clock** | Real-time clock |
+
+### Queue Persistence
+
+If the server crashes or restarts during a multi-target scan:
+
+1. On startup, Xalgorix detects the interrupted queue
+2. Check status: `GET /api/queue/status`
+3. Resume: `POST /api/queue/resume`
+4. Clear: `POST /api/queue/clear`
+
+The Web UI shows a notification when an interrupted queue is detected.
 
 ## Discord Webhook Notifications
 
@@ -219,12 +250,14 @@ All scan data is stored in `~/xalgorix-data/scans/` with per-target directories:
 │   └── scan.json          # Full scan record (events, vulns, stats, tokens)
 ├── target.io_c9d1e4/
 │   └── scan.json
+├── queue_state.json       # Interrupted queue state (for resume)
 └── ...
 ```
 
 - **Auto-cleanup:** Scans older than 30 days are automatically deleted on server startup
 - **Page refresh safe:** Last scan is restored on page load via `/api/scans/latest`
 - **Scan history API:** `GET /api/scans` returns all saved scans (newest first)
+- **Queue recovery:** Interrupted scans can be resumed via `/api/queue/resume`
 
 ## Safety Guardrails
 
@@ -243,6 +276,35 @@ Xalgorix is designed to **test and report**, never **modify or destroy**.
 If the agent attempts any of these, the command is **rejected before execution** with:
 ```
 [BLOCKED] Destructive command rejected: SQL DROP TABLE. Xalgorix is read-only.
+```
+
+### Encoding Bypass Detection
+
+Xalgorix also detects obfuscated commands:
+
+| Technique | Detection |
+|---|---|
+| Base64 | Decodes and checks for blocked patterns |
+| Hex | Detects hex-encoded commands |
+| URL Encoding | Decodes URL-encoded payloads |
+| Obfuscation | Warns on chr(), \x, variable expansion |
+
+Example blocking:
+```
+[BLOCKED] Destructive command rejected: SQL DROP TABLE (detected via base64 decoding)
+```
+
+### Circuit Breaker
+
+To prevent wasting time on failing tools:
+
+- After **5 consecutive failures**, a tool is temporarily blocked
+- **60 seconds** cooldown before retry
+- Helps agent switch to alternative tools faster
+
+Example:
+```
+[BLOCKED] Circuit breaker OPEN for 'nmap' — too many failures. Try again in 45 seconds.
 ```
 
 ### Agent Safety Rules
@@ -274,17 +336,48 @@ All configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XALGORIX_LLM` | *(required)* | Model name (e.g. `openai/gpt-5.4`) |
+| `XALGORIX_LLM` | *(required)* | Model name (e.g. `minimax/MiniMax-M2.5`) |
 | `XALGORIX_API_KEY` | *(required)* | API key |
-| `XALGORIX_API_BASE` | `https://api.openai.com/v1` | API base URL |
+| `XALGORIX_API_BASE` | `https://api.minimax.io/` | API base URL |
 | `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL for notifications |
 | `XALGORIX_MAX_ITERATIONS` | `0` (unlimited) | Max agent iterations |
+| `XALGORIX_RATE_LIMIT_REQUESTS` | `100` | Requests allowed per window |
+| `XALGORIX_RATE_LIMIT_WINDOW` | `60` | Rate limit window (seconds) |
 | `XALGORIX_WORKSPACE` | `$PWD` | Working directory |
 | `XALGORIX_REASONING_EFFORT` | `high` | LLM reasoning effort |
 | `XALGORIX_LLM_MAX_RETRIES` | `5` | API retry count |
 | `XALGORIX_DISABLE_BROWSER` | `false` | Disable headless browser |
 | `CAIDO_PORT` | auto-detect | Caido proxy port |
 | `CAIDO_API_TOKEN` | — | Caido GraphQL API token |
+
+## API Endpoints
+
+### Scan Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/scan` | Start a new scan |
+| POST | `/api/stop` | Stop running scan |
+| GET | `/api/status` | Get scan status |
+| GET | `/api/scans` | List all scans |
+| GET | `/api/scans/:id` | Get scan details |
+| GET | `/api/scans/latest` | Get latest scan |
+| GET | `/api/report/:id` | Download PDF report |
+
+### Queue Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/queue/status` | Check for interrupted queue |
+| POST | `/api/queue/resume` | Resume interrupted scan |
+| POST | `/api/queue/clear` | Clear queue state |
+
+### Settings Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/rate-limit` | Get rate limit settings |
+| POST | `/api/settings/rate-limit` | Update rate limit settings |
 
 ## Recon Toolset
 
@@ -330,12 +423,12 @@ Works with any OpenAI-compatible chat completions API:
 
 | Provider | Model Example | Tested |
 |----------|--------------|--------|
+| MiniMax | `minimax/MiniMax-M2.5` | ✅ |
 | OpenAI | `openai/gpt-5.4` | ✅ |
 | Anthropic | `anthropic/claude-sonnet-4.6` | ✅ |
 | DeepSeek | `deepseek/deepseek-v4` | ✅ |
 | Google | `google/gemini-3.1-pro` | ✅ |
 | Groq | `groq/llama-4-70b` | ✅ |
-| MiniMax | `minimax/MiniMax-M2.5` | ✅ |
 | Ollama | `ollama/llama4` | ✅ (local) |
 
 ## License

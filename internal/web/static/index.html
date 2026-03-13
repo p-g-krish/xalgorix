@@ -1,212 +1,279 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XALGORIX — Autonomous AI Pentesting Engine</title>
-  <meta name="description" content="Xalgorix — AI-powered cybersecurity assessment platform">
+  <title>XALGORIX — Autonomous Pentesting</title>
+  <meta name="description" content="AI-powered cybersecurity assessment platform">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
-
 <body>
   <div class="bg-grid"></div>
-  <div class="bg-glow g1"></div>
-  <div class="bg-glow g2"></div>
-
+  
   <div class="app">
     <!-- Header -->
     <header class="header">
-      <a href="/" class="logo" style="text-decoration:none">
-        <div class="logo-icon">X</div>
+      <a href="/" class="logo">
+        <div class="logo-mark">X</div>
         <div>
-          <div class="logo-text">XALGORIX</div>
-          <div class="logo-tag">Autonomous AI Pentesting</div>
+          <div class="logo-text">XAL<span>GORIX</span></div>
+          <div class="logo-tag">Autonomous Pentesting</div>
         </div>
       </a>
+      
       <div class="header-stats">
-        <div class="stat">
-          <div class="stat-value" id="stat-iter">0</div>
-          <div class="stat-label">Iterations</div>
+        <div class="stat-group">
+          <div class="stat">
+            <div class="stat-value" id="stat-iter">0</div>
+            <div class="stat-label">Iterations</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="stat-tools">0</div>
+            <div class="stat-label">Tools</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="stat-vulns">0</div>
+            <div class="stat-label">Vulns</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="stat-tokens">0</div>
+            <div class="stat-label">Tokens</div>
+          </div>
         </div>
-        <div class="stat">
-          <div class="stat-value" id="stat-tools">0</div>
-          <div class="stat-label">Tools</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value" id="stat-vulns">0</div>
-          <div class="stat-label">Vulns</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value" id="stat-tokens">0</div>
-          <div class="stat-label">Tokens</div>
-        </div>
-        <div id="status-badge" class="status-badge idle">
+        
+        <div class="status-badge idle" id="status-badge">
           <span class="status-dot"></span>
-          <span id="status-text">IDLE</span>
+          <span id="status-text">Idle</span>
         </div>
-        <div class="live-clock" id="live-clock"></div>
+        
+        <div class="live-clock" id="live-clock">--:--:--</div>
       </div>
     </header>
-
-    <!-- Control Panel -->
-    <div class="control-panel">
-      <!-- Row 1: Scan mode + Target -->
-      <div class="input-group">
-        <div class="input-row">
-          <select id="scan-mode" class="input-field select-field">
-            <option value="single">🎯 Single Site Scan</option>
-            <option value="wildcard">🌐 Wildcard / Subdomain Scan</option>
-          </select>
-          <input type="text" id="target-input" class="input-field wide"
-            placeholder="https://target.com — Target URL, IP, or domain">
-          <label class="file-btn" title="Upload targets file (one per line)">
-            📂
-            <input type="file" id="targets-file" accept=".txt,.csv,.list" style="display:none"
-              onchange="handleTargetsFile(this)">
-          </label>
+    
+    <div class="container">
+      <!-- Queue Bar -->
+      <div class="queue-bar" id="queue-bar">
+        <div class="queue-info">
+          <span class="queue-progress" id="queue-progress">Scanning 1/3</span>
+          <span class="queue-target" id="queue-target">target1.com</span>
         </div>
-        <!-- Row 2: Instructions -->
-        <div class="input-row">
-          <textarea id="instruction-input" class="input-field instruction-area"
-            placeholder="Custom instructions (optional) — or upload a file →" rows="2"></textarea>
-          <label class="file-btn" title="Upload instructions file (.txt / .md)">
-            📄
-            <input type="file" id="instructions-file" accept=".txt,.md,.text" style="display:none"
-              onchange="handleInstructionsFile(this)">
-          </label>
+        <div class="queue-track">
+          <div class="queue-fill" id="queue-fill" style="width: 33%"></div>
         </div>
-        <!-- Row 3: LLM Provider Settings -->
-        <details class="llm-settings" id="llm-settings">
-          <summary class="llm-toggle">🤖 LLM Provider Settings</summary>
-          <div class="llm-grid">
-            <select id="llm-provider" class="input-field" onchange="onProviderChange()">
-              <option value="minimax">MiniMax</option>
-              <option value="openai">OpenAI</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="anthropic">Anthropic (via proxy)</option>
-              <option value="google">Google Gemini</option>
-              <option value="groq">Groq</option>
-              <option value="ollama">Ollama (Local)</option>
-              <option value="custom">Custom Provider</option>
+      </div>
+      
+      <!-- Control Panel -->
+      <div class="control-panel">
+        <div class="input-section">
+          <div class="input-row">
+            <select id="scan-mode" class="input-field input-select">
+              <option value="single">🎯 Single Site Scan</option>
+              <option value="wildcard">🌐 Wildcard / Subdomain Scan</option>
             </select>
-            <input type="text" id="llm-model" class="input-field" placeholder="Model name (e.g. MiniMax-M2.5)">
-            <input type="password" id="llm-apikey" class="input-field" placeholder="API Key (leave blank to use env)">
-            <input type="text" id="llm-apibase" class="input-field" placeholder="API Base URL (auto-filled)">
+            <input type="text" id="target-input" class="input-field" placeholder="https://target.com — Target URL, domain, or IP">
+            <label class="file-btn" title="Upload targets file">
+              📂
+              <input type="file" id="targets-file" accept=".txt,.csv,.list" style="display:none" onchange="handleTargetsFile(this)">
+            </label>
           </div>
-        </details>
-        <details class="llm-settings" id="notif-settings">
-          <summary class="llm-toggle">🔔 Discord Notifications</summary>
-          <div class="llm-grid" style="grid-template-columns: 1fr;">
-            <input type="text" id="discord-webhook" class="input-field" placeholder="Discord Webhook URL (https://discord.com/api/webhooks/...)">
+          
+          <div class="input-row">
+            <textarea id="instruction-input" class="input-field input-textarea" placeholder="Custom instructions (optional) — or upload a file"></textarea>
+            <label class="file-btn" title="Upload instructions file">
+              📄
+              <input type="file" id="instructions-file" accept=".txt,.md,.text" style="display:none" onchange="handleInstructionsFile(this)">
+            </label>
           </div>
-        </details>
-      </div>
-      <div class="btn-group">
-        <button id="btn-scan" class="btn btn-primary" onclick="startScan()">
-          ⚡ Launch
-        </button>
-        <button id="btn-stop" class="btn btn-danger" onclick="stopScan()" style="display:none">
-          ⛔ Stop
-        </button>
-      </div>
-    </div>
-
-    <!-- Target Queue Progress -->
-    <div class="queue-bar" id="queue-bar" style="display:none">
-      <div class="queue-info">
-        <span id="queue-label">Target 1/5</span>
-        <span id="queue-target" class="queue-target">—</span>
-      </div>
-      <div class="queue-track">
-        <div class="queue-fill" id="queue-fill" style="width:0%"></div>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <div class="main">
-      <!-- Event Feed -->
-      <div class="feed">
-        <div class="feed-header">
-          <span><span class="activity-ring" id="activity-ring" style="display:none"></span>Live Agent Feed</span>
-          <span id="event-count">0 events</span>
-        </div>
-        <div class="feed-body" id="feed">
-          <div class="welcome" id="welcome">
-            <div class="welcome-icon">⚡</div>
-            <h3>Ready to Hunt</h3>
-            <p>Enter a target and launch a scan, or upload a targets file.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sidebar -->
-      <div class="sidebar">
-        <!-- Vulnerabilities -->
-        <div class="card">
-          <div class="card-header">🐛 Vulnerabilities</div>
-          <div class="card-body">
-            <ul class="vuln-list" id="vuln-list">
-              <li class="empty-state">No vulnerabilities found yet</li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Tool Usage -->
-        <div class="card">
-          <div class="card-header">🔧 Tool Usage</div>
-          <div class="card-body">
-            <div class="tool-stats" id="tool-stats">
-              <div class="empty-state" style="grid-column:1/-1">No tools called yet</div>
+          
+          <details class="settings-toggle" id="llm-settings">
+            <summary>🤖 LLM Provider Settings</summary>
+            <div class="settings-panel" id="llm-settings-panel">
+              <select id="llm-provider" class="input-field" onchange="onProviderChange()">
+                <option value="minimax">MiniMax</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google Gemini</option>
+                <option value="groq">Groq</option>
+                <option value="ollama">Ollama (Local)</option>
+                <option value="custom">Custom Provider</option>
+              </select>
+              <input type="text" id="llm-model" class="input-field" placeholder="Model (e.g. MiniMax-M2.5)">
+              <input type="password" id="llm-apikey" class="input-field" placeholder="API Key">
+              <input type="text" id="llm-apibase" class="input-field" placeholder="API Base URL">
             </div>
-          </div>
+          </details>
+          
+          <details class="settings-toggle" id="notif-settings">
+            <summary>🔔 Discord Notifications</summary>
+            <div class="settings-panel" id="notif-settings-panel">
+              <input type="text" id="discord-webhook" class="input-field" style="grid-column: span 4" placeholder="Discord Webhook URL">
+            </div>
+          </details>
+          
+          <details class="settings-toggle" id="rate-settings">
+            <summary>⚡ Rate Limiting</summary>
+            <div class="settings-panel" id="rate-settings-panel" style="grid-template-columns: 1fr 1fr 1fr;">
+              <input type="number" id="rate-limit-requests" class="input-field" placeholder="Requests (1-1000)" min="1" max="1000" style="grid-column: 1;">
+              <input type="number" id="rate-limit-window" class="input-field" placeholder="Window (10-3600s)" min="10" max="3600" style="grid-column: 2;">
+              <button class="btn btn-secondary" onclick="saveRateLimit()" style="grid-column: 3; padding: 12px;">💾 Save</button>
+              <div id="rate-limit-status" style="grid-column: 1 / -1; font-size: 11px; color: var(--success); text-align: center; margin-top: 4px;"></div>
+            </div>
+          </details>
         </div>
-
-        <!-- Session -->
-        <div class="card">
-          <div class="card-header">📊 Session</div>
-          <div class="card-body">
-            <div class="tool-stats">
-              <div class="tool-stat">
-                <span class="tool-stat-name">Duration</span>
-                <span class="tool-stat-count" id="duration">0s</span>
+        
+        <div class="btn-group">
+          <button class="btn btn-primary" id="start-btn" onclick="startScan()">
+            <span>▶</span> Start Scan
+          </button>
+          <button class="btn btn-danger hidden" id="stop-btn" onclick="stopScan()">
+            <span>■</span> Stop
+          </button>
+          <button class="btn btn-secondary" onclick="clearFeed()">
+            🗑️ Clear
+          </button>
+        </div>
+      </div>
+      
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Feed Section -->
+        <div class="feed-section">
+          <div class="feed-card" id="feed-card">
+            <div class="feed-header">
+              <span class="feed-title">Live Feed</span>
+              <div class="feed-actions">
+                <button class="feed-btn" onclick="downloadEvents()">Export</button>
+                <button class="feed-btn" onclick="scrollToBottom()">Latest</button>
               </div>
-              <div class="tool-stat">
-                <span class="tool-stat-name">Events</span>
-                <span class="tool-stat-count" id="total-events">0</span>
+            </div>
+            <div class="feed-body" id="feed-body">
+              <div class="empty-state" id="empty-state">
+                <div class="empty-icon">🎯</div>
+                <div class="empty-title">Ready to Scan</div>
+                <div class="empty-desc">Enter a target and start your pentest</div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- Loaded Targets -->
-        <div class="card" id="targets-card" style="display:none">
-          <div class="card-header">🎯 Target Queue</div>
-          <div class="card-body">
-            <ul class="target-list" id="target-list"></ul>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+          <!-- Vulnerabilities Card -->
+          <div class="sidebar-card">
+            <div class="sidebar-header">
+              <span>🐛 Vulnerabilities</span>
+              <span class="sidebar-count" id="vuln-count">0</span>
+            </div>
+            <div class="sidebar-body">
+              <ul class="vuln-list" id="vuln-list">
+                <li class="empty-state" style="padding: 20px 0">
+                  <div class="empty-title" style="font-size: 13px">No vulnerabilities found</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+          <!-- Tools Card -->
+          <div class="sidebar-card">
+            <div class="sidebar-header">
+              <span>🔧 Tools Used</span>
+              <span class="sidebar-count" id="tools-count">0</span>
+            </div>
+            <div class="sidebar-body">
+              <ul class="vuln-list" id="tools-list" style="max-height: 180px">
+                <li class="empty-state" style="padding: 20px 0">
+                  <div class="empty-title" style="font-size: 13px">No tools used yet</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+          <!-- Quick Actions Card -->
+          <div class="sidebar-card">
+            <div class="sidebar-header">
+              <span>⚡ Quick Actions</span>
+            </div>
+            <div class="sidebar-body" style="display: flex; flex-direction: column; gap: 8px">
+              <button class="btn btn-secondary" onclick="loadLastScan()" style="justify-content: flex-start; font-size: 12px; padding: 10px 14px">
+                📂 Load Last Scan
+              </button>
+              <button class="btn btn-secondary" onclick="showHelp()" style="justify-content: flex-start; font-size: 12px; padding: 10px 14px">
+                ❓ Help & Commands
+              </button>
+            </div>
           </div>
         </div>
       </div>
+      
+      <!-- Footer -->
+      <footer class="footer">
+        <a href="https://github.com/xalgord/xalgorix" target="_blank">Xalgorix</a> 
+        <span class="separator">•</span> 
+        Autonomous AI Pentesting Engine
+      </footer>
     </div>
-
-    <footer class="footer">
-      Built by <a href="https://github.com/xalgord" target="_blank" rel="noopener">@xalgord</a>
-      <span class="separator">|</span>
-      Xalgorix v0.1.0
-    </footer>
+  </div>
+  
+  <!-- Vulnerability Modal -->
+  <div class="modal-overlay" id="vuln-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title">
+          <span class="vuln-severity-dot" id="modal-severity-dot"></span>
+          <span id="modal-vuln-title">SQL Injection</span>
+        </div>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Dynamic content -->
+      </div>
+    </div>
   </div>
 
-  <!-- Vulnerability Detail Modal -->
-  <div id="vuln-modal" class="vuln-modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-    <div class="vuln-modal">
-      <button class="vuln-modal-close" onclick="this.parentElement.parentElement.style.display='none'">&times;</button>
-      <div id="vuln-modal-content"></div>
+  <!-- Help Modal -->
+  <div class="modal-overlay" id="help-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>❓</span>
+          <span>Help & Commands</span>
+        </div>
+        <button class="modal-close" onclick="closeHelpModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section">
+          <div class="modal-label">Getting Started</div>
+          <div class="modal-value">
+            • Enter a target URL, domain, or IP address<br>
+            • Add custom instructions for specific testing focus<br>
+            • Upload a targets file (one per line) for batch scanning
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">LLM Provider</div>
+          <div class="modal-value">
+            Switch between MiniMax, OpenAI, DeepSeek, Anthropic, Google, Groq, or Ollama in the settings panel.
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">Notifications</div>
+          <div class="modal-value">
+            Add a Discord webhook to receive real-time alerts for scan start, vulnerabilities found, and completion.
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label">Keyboard Shortcuts</div>
+          <div class="modal-value">
+            <code style="background:var(--bg-tertiary);padding:4px 8px;border-radius:4px;font-size:12px">Enter</code> — Start scan<br>
+            <code style="background:var(--bg-tertiary);padding:4px 8px;border-radius:4px;font-size:12px">Esc</code> — Close modal
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script src="app.js"></script>
 </body>
-
 </html>

@@ -219,10 +219,7 @@ Call a tool NOW in your next response.`
 				return
 			}
 
-			resultMsg := fmt.Sprintf("Tool '%s' result:\n%s", tc.Name, result.Output)
-			if result.Error != "" {
-				resultMsg = fmt.Sprintf("Tool '%s' error:\n%s", tc.Name, result.Error)
-			}
+			resultMsg := formatToolResult(tc.Name, result)
 			a.messages = append(a.messages, llm.Message{Role: "user", Content: resultMsg})
 		}
 	}
@@ -233,6 +230,67 @@ Call a tool NOW in your next response.`
 // Stop signals the agent to stop.
 func (a *Agent) Stop() {
 	a.stopped = true
+}
+
+// formatToolResult formats tool execution results with helpful suggestions
+func formatToolResult(toolName string, result tools.Result) string {
+	output := result.Output
+	errorMsg := result.Error
+	
+	// Build the message
+	var msg string
+	if errorMsg != "" {
+		msg = fmt.Sprintf("Tool '%s' error: %s\n", toolName, errorMsg)
+		// Add helpful suggestions based on the error
+		msg += getToolSuggestion(toolName, errorMsg)
+	} else if output != "" {
+		msg = fmt.Sprintf("Tool '%s' result:\n%s", toolName, output)
+	} else {
+		msg = fmt.Sprintf("Tool '%s' completed successfully (no output)", toolName)
+	}
+	
+	return msg
+}
+
+// getToolSuggestion provides helpful suggestions when a tool fails
+func getToolSuggestion(toolName, errorMsg string) string {
+	lower := strings.ToLower(errorMsg)
+	
+	switch {
+	case strings.Contains(toolName, "terminal") || strings.Contains(toolName, "browser"):
+		if strings.Contains(lower, "not found") || strings.Contains(lower, "no such file") {
+			return "Suggestion: The command or tool was not found. Try using a different approach or check if the tool is installed.\n"
+		}
+		if strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") {
+			return "Suggestion: Permission denied. Try running with elevated privileges or use a different method.\n"
+		}
+		if strings.Contains(lower, "timeout") {
+			return "Suggestion: Command timed out. Try with a shorter timeout or break the task into smaller steps.\n"
+		}
+		if strings.Contains(lower, "connection") || strings.Contains(lower, "network") {
+			return "Suggestion: Network error. Check the target URL and try again.\n"
+		}
+		
+	case strings.Contains(toolName, "python"):
+		if strings.Contains(lower, "no module") || strings.Contains(lower, "import error") {
+			return "Suggestion: Missing Python module. Try installing the required package or use an alternative approach.\n"
+		}
+		if strings.Contains(lower, "syntax") {
+			return "Suggestion: Python syntax error. Check the script for errors.\n"
+		}
+		
+	case strings.Contains(toolName, "browser"):
+		if strings.Contains(lower, "chrome") || strings.Contains(lower, "chromium") {
+			return "Suggestion: Browser automation issue. Try using send_request instead for HTTP interactions.\n"
+		}
+		
+	case strings.Contains(toolName, "proxy"):
+		if strings.Contains(lower, "connection refused") {
+			return "Suggestion: Proxy connection failed. Make sure Caido is running or use direct HTTP requests.\n"
+		}
+	}
+	
+	return ""
 }
 
 func (a *Agent) emit(evt Event) {

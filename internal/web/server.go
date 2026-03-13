@@ -30,6 +30,96 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+// RateLimiter implements a simple in-memory rate limiter
+type RateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+
+func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	rl := &RateLimiter{
+		requests: make(map[string][]time.Time),
+		limit:    limit,
+		window:   window,
+	}
+	// Cleanup old entries every minute
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			rl.cleanup()
+		}
+	}()
+	return rl
+}
+
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	for ip, times := range rl.requests {
+		var valid []time.Time
+		for _, t := range times {
+			if now.Sub(t) < rl.window {
+				valid = append(valid, t)
+			}
+		}
+		if len(valid) == 0 {
+			delete(rl.requests, ip)
+		} else {
+			rl.requests[ip] = valid
+		}
+	}
+}
+
+func (rl *RateLimiter) Allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	windowStart := now.Add(-rl.window)
+	
+	// Get or create the slice
+	times := rl.requests[ip]
+	var valid []time.Time
+	for _, t := range times {
+		if t.After(windowStart) {
+			valid = append(valid, t)
+		}
+	}
+	
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
+	
+	rl.requests[ip] = append(valid, now)
+	return true
+}
+
+func rateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip rate limiting for WebSocket and static files
+			if r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/static") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			
+			ip := r.RemoteAddr
+			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+				ip = strings.Split(forwarded, ",")[0]
+			}
+			
+			if !rl.Allow(ip) {
+				http.Error(w, "Rate limit exceeded. Please try again later.", http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -93,6 +183,48 @@ type ScanRecord struct {
 	ToolCalls   int         `json:"tool_calls"`
 }
 
+// QueueState persists scan queue state for recovery after restart
+type QueueState struct {
+	Targets     []string `json:"targets"`
+	CurrentIdx  int      `json:"current_idx"`
+	Instruction string   `json:"instruction"`
+	ScanMode    string   `json:"scan_mode"`
+	StartedAt   string   `json:"started_at"`
+	Active      bool     `json:"active"`
+}
+
+// saveQueueState saves the current queue state to disk
+func (s *Server) saveQueueState(targets []string, idx int, instruction, scanMode string) {
+	state := QueueState{
+		Targets:     targets,
+		CurrentIdx:  idx,
+		Instruction: instruction,
+		ScanMode:    scanMode,
+		StartedAt:   time.Now().Format(time.RFC3339),
+		Active:      true,
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	os.WriteFile(filepath.Join(s.dataDir, "queue_state.json"), data, 0644)
+}
+
+// loadQueueState loads queue state from disk if exists
+func (s *Server) loadQueueState() *QueueState {
+	data, err := os.ReadFile(filepath.Join(s.dataDir, "queue_state.json"))
+	if err != nil {
+		return nil
+	}
+	var state QueueState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+	return &state
+}
+
+// clearQueueState removes the queue state file
+func (s *Server) clearQueueState() {
+	os.Remove(filepath.Join(s.dataDir, "queue_state.json"))
+}
+
 // Server is the web UI server.
 type Server struct {
 	cfg            *config.Config
@@ -106,18 +238,22 @@ type Server struct {
 	currentScanDir string
 	discordWebhook string
 	liveScanRecord *ScanRecord
+	rateLimiter    *RateLimiter
 }
 
 // NewServer creates a new web server.
 func NewServer(cfg *config.Config, port int) *Server {
 	home, _ := os.UserHomeDir()
 	dataDir := filepath.Join(home, "xalgorix-data", "scans")
+	// Rate limit from config (defaults: 60 requests per minute)
+	rl := NewRateLimiter(cfg.RateLimitRequests, time.Duration(cfg.RateLimitWindow)*time.Second)
 	return &Server{
 		cfg:            cfg,
 		port:           port,
 		clients:        make(map[*websocket.Conn]bool),
 		dataDir:        dataDir,
 		discordWebhook: os.Getenv("XALGORIX_DISCORD_WEBHOOK"),
+		rateLimiter:    rl,
 	}
 }
 
@@ -159,11 +295,19 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/upload-targets", s.handleUploadTargets)
 	mux.HandleFunc("/api/upload-instructions", s.handleUploadInstructions)
 	mux.HandleFunc("/api/report/", s.handleDownloadReport)
+	mux.HandleFunc("/api/settings/rate-limit", s.handleRateLimit)
+	mux.HandleFunc("/api/queue/status", s.handleQueueStatus)
+	mux.HandleFunc("/api/queue/resume", s.handleQueueResume)
+	mux.HandleFunc("/api/queue/clear", s.handleQueueClear)
 
+	// Wrap with rate limiting middleware
+	rlMiddleware := rateLimitMiddleware(s.rateLimiter)
+	
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("Xalgorix Web UI → http://localhost:%d", s.port)
 	log.Printf("Scan data → %s", s.dataDir)
-	return http.ListenAndServe(addr, mux)
+	log.Printf("Rate limiting: %d requests/%ds per IP", s.cfg.RateLimitRequests, s.cfg.RateLimitWindow)
+	return http.ListenAndServe(addr, rlMiddleware(mux))
 }
 
 // initDataDir creates the data directory and cleans up old scans (>30 days).
@@ -185,6 +329,13 @@ func (s *Server) initDataDir() {
 			os.RemoveAll(filepath.Join(s.dataDir, e.Name()))
 			log.Printf("Cleaned up old scan: %s", e.Name())
 		}
+	}
+
+	// Check for interrupted queue and offer recovery
+	if state := s.loadQueueState(); state != nil && state.Active {
+		log.Printf("Found interrupted scan queue: %d targets remaining from index %d", 
+			len(state.Targets)-state.CurrentIdx, state.CurrentIdx)
+		// Queue will be offered for recovery via API
 	}
 }
 
@@ -369,6 +520,9 @@ func (s *Server) runMultiScan(req ScanRequest) {
 	}
 	totalTargets := len(req.Targets)
 
+	// Save queue state for persistence
+	s.saveQueueState(req.Targets, 0, req.Instruction, req.ScanMode)
+
 	s.broadcast(WSEvent{
 		Type:         "queue_started",
 		Content:      fmt.Sprintf("Starting scan queue: %d target(s)", totalTargets),
@@ -383,6 +537,9 @@ func (s *Server) runMultiScan(req ScanRequest) {
 			s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
 			break
 		}
+
+		// Update queue state after each target
+		s.saveQueueState(req.Targets, i, req.Instruction, req.ScanMode)
 
 		// Create per-target scan directory with random slug
 		scanDirName := fmt.Sprintf("%s_%s", sanitizeTarget(target), randomSlug())
@@ -415,6 +572,8 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		})
 	}
 
+	// Clear queue state when done
+	s.clearQueueState()
 	s.running = false
 
 	// Discord: scan finished
@@ -699,6 +858,121 @@ func (s *Server) handleDownloadReport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"xalgorix_report_%s.pdf\"", scanID))
 	http.ServeFile(w, r, reportPath)
+}
+
+// handleRateLimit handles GET and POST for rate limit settings.
+func (s *Server) handleRateLimit(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	switch r.Method {
+	case "GET":
+		// Return current rate limit settings
+		json.NewEncoder(w).Encode(map[string]int{
+			"requests": s.cfg.RateLimitRequests,
+			"window":   s.cfg.RateLimitWindow,
+		})
+		
+	case "POST":
+		// Update rate limit settings
+		var req struct {
+			Requests int `json:"requests"`
+			Window   int `json:"window"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		
+		// Validate values
+		if req.Requests < 1 {
+			req.Requests = 1
+		}
+		if req.Requests > 1000 {
+			req.Requests = 1000
+		}
+		if req.Window < 10 {
+			req.Window = 10
+		}
+		if req.Window > 3600 {
+			req.Window = 3600
+		}
+		
+		// Update config
+		s.cfg.RateLimitRequests = req.Requests
+		s.cfg.RateLimitWindow = req.Window
+		
+		// Recreate rate limiter with new settings
+		s.rateLimiter = NewRateLimiter(req.Requests, time.Duration(req.Window)*time.Second)
+		
+		log.Printf("Rate limiting updated: %d requests/%ds per IP", req.Requests, req.Window)
+		
+		json.NewEncoder(w).Encode(map[string]int{
+			"requests": req.Requests,
+			"window":   req.Window,
+		})
+		
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleQueueStatus returns the current queue state for recovery
+func (s *Server) handleQueueStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if state := s.loadQueueState(); state != nil && state.Active {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"available":      true,
+			"targets":        state.Targets,
+			"current_idx":    state.CurrentIdx,
+			"remaining":      len(state.Targets) - state.CurrentIdx,
+			"instruction":    state.Instruction,
+			"scan_mode":     state.ScanMode,
+			"started_at":    state.StartedAt,
+		})
+	} else {
+		json.NewEncoder(w).Encode(map[string]bool{"available": false})
+	}
+}
+
+// handleQueueResume resumes an interrupted scan queue
+func (s *Server) handleQueueResume(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if s.running {
+		json.NewEncoder(w).Encode(map[string]string{"error": "A scan is already running"})
+		return
+	}
+	
+	state := s.loadQueueState()
+	if state == nil || !state.Active {
+		json.NewEncoder(w).Encode(map[string]string{"error": "No interrupted queue found"})
+		return
+	}
+	
+	// Resume from where we left off
+	remaining := state.Targets[state.CurrentIdx:]
+	req := ScanRequest{
+		Targets:     remaining,
+		Instruction: state.Instruction,
+		ScanMode:    state.ScanMode,
+	}
+	
+	// Start resume in background
+	go s.runMultiScan(req)
+	
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":       "resumed",
+		"from_index":   state.CurrentIdx,
+		"targets_left":  len(remaining),
+	})
+}
+
+// handleQueueClear clears an interrupted queue state
+func (s *Server) handleQueueClear(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	s.clearQueueState()
+	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
 }
 
 // handleGetScan returns a specific scan's full data.

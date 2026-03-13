@@ -4,9 +4,12 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -77,6 +80,18 @@ var packageMap = map[string]string{
 	"bc":      "bc",
 	// SQL
 	"sqlmap": "sqlmap",
+}
+
+// decode decodes a base64 string
+func decode(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
+}
+
+// decodeHex decodes a hex string
+func decodeHex(s string) ([]byte, error) {
+	s = strings.ToLower(s)
+	s = strings.TrimPrefix(s, "0x")
+	return hex.DecodeString(s)
 }
 
 // Register adds terminal tools to the registry.
@@ -310,13 +325,188 @@ var blockedPatterns = []struct {
 }
 
 // isBlockedCommand checks if a command matches any blocked pattern.
+// It also detects encoding attempts (base64, hex, etc.) and checks decoded content.
 func isBlockedCommand(cmd string) string {
+	// First check the raw command
+	if reason := checkBlocked(cmd); reason != "" {
+		return reason
+	}
+	
+	// Try to decode and check base64 encoded commands
+	if decoded := tryBase64Decode(cmd); decoded != "" {
+		if reason := checkBlocked(decoded); reason != "" {
+			return reason + " (detected via base64 decoding)"
+		}
+	}
+	
+	// Try hex decoding
+	if decoded := tryHexDecode(cmd); decoded != "" {
+		if reason := checkBlocked(decoded); reason != "" {
+			return reason + " (detected via hex decoding)"
+		}
+	}
+	
+	// Try URL decoding
+	if decoded := tryURLDecode(cmd); decoded != "" && decoded != cmd {
+		if reason := checkBlocked(decoded); reason != "" {
+			return reason + " (detected via URL decoding)"
+		}
+	}
+	
+	// Check for common obfuscation patterns
+	if reason := checkObfuscation(cmd); reason != "" {
+		return reason
+	}
+	
+	return ""
+}
+
+// checkBlocked is the core blocking logic
+func checkBlocked(cmd string) string {
 	lower := strings.ToLower(cmd)
 	for _, bp := range blockedPatterns {
 		if strings.Contains(lower, bp.pattern) {
 			return bp.reason
 		}
 	}
+	return ""
+}
+
+// tryBase64Decode attempts to decode a base64 string
+func tryBase64Decode(cmd string) string {
+	// Remove common prefixes
+	cmd = strings.TrimSpace(cmd)
+	cmd = strings.TrimPrefix(cmd, "echo ")
+	cmd = strings.TrimPrefix(cmd, "echo ")
+	cmd = strings.TrimSuffix(cmd, " | base64 -d")
+	cmd = strings.TrimSuffix(cmd, " | base64 --decode")
+	cmd = strings.TrimSuffix(cmd, "| base64 -d")
+	cmd = strings.TrimSuffix(cmd, "| base64 --decode")
+	cmd = strings.Trim(cmd, " \t\n")
+	
+	// Try standard base64
+	if decoded, err := decodeBase64(cmd); err == nil && len(decoded) > 0 {
+		return decoded
+	}
+	
+	return ""
+}
+
+// decodeBase64 decodes a base64 string
+func decodeBase64(cmd string) (string, error) {
+	// Add padding if needed
+	missing := 4 - (len(cmd) % 4)
+	if missing != 4 {
+		cmd += strings.Repeat("=", missing)
+	}
+	
+	data, err := decode(cmd) // using the existing base64 decode
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// tryHexDecode attempts to decode a hex string
+func tryHexDecode(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	
+	// Check if it looks like hex (0x... or just hex chars)
+	if !isHexString(cmd) {
+		return ""
+	}
+	
+	data, err := decodeHex(cmd)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// isHexString checks if a string is valid hexadecimal
+func isHexString(s string) bool {
+	s = strings.ToLower(s)
+	// Remove 0x prefix if present
+	s = strings.TrimPrefix(s, "0x")
+	if len(s) < 4 || len(s)%2 != 0 {
+		return false
+	}
+	_, err := decodeHex(s)
+	return err == nil
+}
+
+// tryURLDecode attempts to URL decode a string
+func tryURLDecode(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	
+	// Must contain URL-encoded characters
+	if !strings.ContainsAny(cmd, "%") {
+		return ""
+	}
+	
+	// Use already imported net/url
+	// Since we don't have net/url imported, we'll do simple decoding
+	decoded := simpleURLDecode(cmd)
+	return decoded
+}
+
+// simpleURLDecode does basic URL decoding
+func simpleURLDecode(s string) string {
+	result := s
+	result = strings.ReplaceAll(result, "%20", " ")
+	result = strings.ReplaceAll(result, "%2F", "/")
+	result = strings.ReplaceAll(result, "%3A", ":")
+	result = strings.ReplaceAll(result, "%3F", "?")
+	result = strings.ReplaceAll(result, "%3D", "=")
+	result = strings.ReplaceAll(result, "%26", "&")
+	result = strings.ReplaceAll(result, "%27", "'")
+	result = strings.ReplaceAll(result, "%22", "\"")
+	result = strings.ReplaceAll(result, "%3C", "<")
+	result = strings.ReplaceAll(result, "%3E", ">")
+	result = strings.ReplaceAll(result, "%5C", "\\")
+	result = strings.ReplaceAll(result, "%2D", "-")
+	result = strings.ReplaceAll(result, "%5F", "_")
+	result = strings.ReplaceAll(result, "%2E", ".")
+	result = strings.ReplaceAll(result, "%2B", "+")
+	result = strings.ReplaceAll(result, "%24", "$")
+	result = strings.ReplaceAll(result, "%40", "@")
+	result = strings.ReplaceAll(result, "%23", "#")
+	// Handle %XX hex sequences
+	for i := 0; i < len(result)-2; i++ {
+		if result[i] == '%' {
+			hex := result[i+1 : i+3]
+			if data, err := decodeHex(hex); err == nil && len(data) == 1 {
+				result = result[:i] + string(data[0]) + result[i+3:]
+				i-- // recheck from the new position
+			}
+		}
+	}
+	return result
+}
+
+// checkObfuscation detects common obfuscation techniques
+func checkObfuscation(cmd string) string {
+	lower := strings.ToLower(cmd)
+	
+	// Check for character substitution obfuscation
+	// e.g., c'h'o'p, r\m -rf, etc.
+	obfuscationPatterns := []struct {
+		pattern string
+		reason  string
+	}{
+		{"chr\\s*\\(", "character code obfuscation"},
+		{"\\\\x[0-9a-f]{2}", "hex escape obfuscation"},
+		{"\\$\\s*\\{", "variable expansion obfuscation"},
+	}
+	
+	for _, op := range obfuscationPatterns {
+		if matched, _ := regexp.MatchString(op.pattern, lower); matched {
+			// Check if the deobfuscated content would be dangerous
+			// For now, just warn about the obfuscation attempt
+			return "obfuscated command detected: " + op.reason
+		}
+	}
+	
 	return ""
 }
 

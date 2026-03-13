@@ -36,17 +36,88 @@
         custom: { model: '', prefix: '', base: '' },
     };
 
-    // ── WebSocket ──────────────────────────────────────────
+    // ── WebSocket with Improved Reconnection ────────────────
+    let wsReconnectAttempts = 0;
+    let wsReconnectDelay = 1000;
+    const wsMaxReconnectDelay = 30000;
+    let wsReconnecting = false;
+    
     function connect() {
+        // Prevent multiple connection attempts
+        if (wsReconnecting && ws && ws.readyState === WebSocket.OPEN) {
+            return;
+        }
+        
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${proto}//${location.host}/ws`);
-        ws.onopen = () => console.log('WS connected');
-        ws.onclose = () => { setTimeout(connect, 2000); };
-        ws.onerror = (e) => console.error('WS error', e);
+        
+        ws.onopen = () => {
+            console.log('WS connected');
+            wsReconnectAttempts = 0;
+            wsReconnectDelay = 1000;
+            wsReconnecting = false;
+            updateConnectionStatus('connected');
+        };
+        
+        ws.onclose = () => {
+            console.log('WS disconnected');
+            wsReconnecting = true;
+            updateConnectionStatus('disconnected');
+            
+            // Exponential backoff
+            wsReconnectAttempts++;
+            const delay = Math.min(wsReconnectDelay * Math.pow(1.5, wsReconnectAttempts - 1), wsMaxReconnectDelay);
+            console.log(`WS reconnecting in ${delay}ms (attempt ${wsReconnectAttempts})`);
+            
+            setTimeout(connect, delay);
+        };
+        
+        ws.onerror = (e) => {
+            console.error('WS error', e);
+            updateConnectionStatus('error');
+        };
+        
         ws.onmessage = (e) => {
             try { handleEvent(JSON.parse(e.data)); } catch (err) { console.error('Parse error', err); }
         };
     }
+    
+    function updateConnectionStatus(status) {
+        // Create status indicator if not exists
+        let indicator = document.getElementById('ws-status');
+        if (!indicator) {
+            const header = document.querySelector('.header-stats');
+            indicator = document.createElement('div');
+            indicator.id = 'ws-status';
+            indicator.style.cssText = 'width:8px;height:8px;border-radius:50%;margin-right:8px;';
+            header.insertBefore(indicator, header.firstChild);
+        }
+        
+        switch(status) {
+            case 'connected':
+                indicator.style.background = 'var(--success)';
+                indicator.style.boxShadow = '0 0 6px var(--success)';
+                break;
+            case 'disconnected':
+                indicator.style.background = 'var(--warning)';
+                indicator.style.boxShadow = '0 0 6px var(--warning)';
+                break;
+            case 'error':
+                indicator.style.background = 'var(--danger)';
+                indicator.style.boxShadow = '0 0 6px var(--danger)';
+                break;
+        }
+    }
+    
+    // Function to manually reconnect
+    window.reconnectWebSocket = function() {
+        if (ws) {
+            ws.close();
+        }
+        wsReconnectAttempts = 0;
+        wsReconnectDelay = 1000;
+        connect();
+    };
 
     // ── Event Handler ──────────────────────────────────────
     function handleEvent(evt) {
@@ -60,37 +131,32 @@
             const el = document.getElementById('stat-tokens');
             if (el.textContent !== formatted) {
                 el.textContent = formatted;
-                popStat('stat-tokens', formatted);
+                popStat('stat-tokens');
             }
         }
 
         eventCount++;
-        document.getElementById('total-events').textContent = eventCount;
-        document.getElementById('event-count').textContent = `${eventCount} events`;
+        hideEmptyState();
 
         switch (evt.type) {
             case 'queue_started':
                 setStatus('running', 'SCANNING');
-                hideWelcome();
                 totalTargets = evt.total_targets || 1;
-                if (totalTargets > 1) showQueueBar(totalTargets);
-                addFeedItem(renderBanner('🚀', evt.content, 'cyan'));
+                if (totalTargets > 1) showQueueBar();
+                addFeedItem(renderBanner('🚀', evt.content));
                 break;
 
             case 'target_started':
                 currentTargetIdx = evt.target_index || 1;
                 updateQueueBar(currentTargetIdx, totalTargets, evt.target);
-                updateTargetList(currentTargetIdx - 1, 'active');
-                addFeedItem(renderTargetBanner(evt.content));
-                // Set URL path to scan ID so this scan has a unique URL
+                addFeedItem(renderTargetBanner(evt.target));
                 if (evt.agent_id) {
                     history.pushState(null, '', '/' + evt.agent_id);
                 }
                 break;
 
             case 'target_completed':
-                updateTargetList(currentTargetIdx - 1, 'done');
-                addFeedItem(renderBanner('✅', evt.content, 'green'));
+                addFeedItem(renderBanner('✅', `Completed: ${evt.content || evt.target}`, 'success'));
                 break;
 
             case 'queue_finished':
@@ -99,35 +165,28 @@
                 stopTimer();
                 toggleButtons(false);
                 hideQueueBar();
-                addFeedItem(renderBanner('🏁', evt.content, 'green'));
+                addFeedItem(renderBanner('🏁', evt.content || 'All targets completed', 'success'));
                 break;
 
             case 'report_ready':
-                // Show download button in feed
-                const reportUrl = evt.content;
-                const reportDiv = document.createElement('div');
-                reportDiv.className = 'event-item event-report';
-                reportDiv.innerHTML = `<span class="event-icon">📄</span> <a href="${reportUrl}" target="_blank" class="report-download-btn">Download PDF Report</a>`;
-                document.getElementById('feed-body').appendChild(reportDiv);
-                // Also show a persistent download button
-                showReportButton(reportUrl);
+                showReportButton(evt.report_url || evt.content);
+                addFeedItem(renderBanner('📄', 'Report ready! Click to download.', 'success'));
                 break;
 
             case 'scan_started':
                 setStatus('running', 'SCANNING');
-                hideWelcome();
-                addFeedItem(renderBanner('🚀', evt.content, 'cyan'));
+                addFeedItem(renderBanner('🚀', evt.content));
                 break;
 
             case 'thinking':
                 iterCount++;
-                popStat('stat-iter', iterCount);
+                popStat('stat-iter');
                 addFeedItem(renderThinking(evt.content), true);
                 break;
 
             case 'tool_call':
                 toolCount++;
-                popStat('stat-tools', toolCount);
+                popStat('stat-tools');
                 toolUsage[evt.tool_name] = (toolUsage[evt.tool_name] || 0) + 1;
                 updateToolStats();
                 addFeedItem(renderToolCall(evt));
@@ -135,10 +194,10 @@
 
             case 'tool_result':
                 addFeedItem(renderToolResult(evt));
-                // Real-time vuln rendering when report_vulnerability succeeds
+                // Real-time vuln rendering
                 if (evt.vulns && evt.vulns.length > 0) {
                     vulnCount += evt.vulns.length;
-                    popStat('stat-vulns', vulnCount);
+                    popStat('stat-vulns');
                     renderVulns(evt.vulns);
                 }
                 break;
@@ -156,10 +215,9 @@
             case 'finished':
                 if (evt.vulns && evt.vulns.length > 0) {
                     vulnCount += evt.vulns.length;
-                    popStat('stat-vulns', vulnCount);
+                    popStat('stat-vulns');
                     renderVulns(evt.vulns);
                 }
-                // Don't stop timer here for multi-target — queue_finished handles that
                 if (totalTargets <= 1) {
                     scanRunning = false;
                     setStatus('finished', 'COMPLETED');
@@ -175,35 +233,33 @@
                 stopTimer();
                 toggleButtons(false);
                 hideQueueBar();
-                addFeedItem(renderError(evt.content));
+                addFeedItem(renderError(evt.content || 'Scan stopped by user'));
                 break;
         }
     }
 
     // ── Renderers ──────────────────────────────────────────
-    function renderBanner(icon, content, color) {
+    function renderBanner(icon, content, type = 'accent') {
         const el = document.createElement('div');
         el.className = 'event event-finished';
-        if (color === 'cyan') {
-            el.style.borderLeftColor = '#06b6d4';
-            el.style.background = 'rgba(6,182,212,0.05)';
-            el.style.color = '#22d3ee';
+        if (type === 'success') {
+            el.style.background = 'var(--success-subtle)';
         }
         el.innerHTML = `${icon} ${esc(content)}`;
         return el;
     }
 
-    function renderTargetBanner(content) {
+    function renderTargetBanner(target) {
         const el = document.createElement('div');
         el.className = 'event event-target';
-        el.innerHTML = `🎯 ${esc(content)}`;
+        el.innerHTML = `🎯 Scanning: ${esc(target)}`;
         return el;
     }
 
     function renderThinking(content) {
         const el = document.createElement('div');
-        el.className = 'event event-thinking';
-        el.textContent = `◈ ${content}`;
+        el.className = 'event event-think';
+        el.innerHTML = `<div class="typing"><span></span><span></span><span></span></div> ${esc(content)}`;
         return el;
     }
 
@@ -215,25 +271,25 @@
         let argsHTML = '';
         if (evt.tool_args && Object.keys(evt.tool_args).length > 0) {
             const argsText = Object.entries(evt.tool_args)
-                .map(([k, v]) => `${k}: ${v.length > 200 ? v.slice(0, 200) + '...' : v}`)
+                .map(([k, v]) => `${k}: ${typeof v === 'string' && v.length > 200 ? v.slice(0, 200) + '...' : v}`)
                 .join('\n');
             argsHTML = `<div class="event-tool-args">${esc(argsText)}</div>`;
         }
         el.innerHTML = `
-      <div class="event-tool-header">
-        <span class="event-tool-icon">${icon}</span>
-        <span class="event-tool-name">${esc(evt.tool_name)}</span>
-        <span class="event-tool-time">${timeStr}</span>
-      </div>${argsHTML}`;
+            <div class="event-tool-header">
+                <span class="event-tool-icon">${icon}</span>
+                <span class="event-tool-name">${esc(evt.tool_name)}</span>
+                <span class="event-tool-time">${timeStr}</span>
+            </div>${argsHTML}`;
         return el;
     }
 
     function renderToolResult(evt) {
         const el = document.createElement('div');
         const output = evt.error || evt.output || '';
-        const truncated = output.length > 500 ? output.slice(0, 500) + '...' : output;
+        const truncated = output.length > 600 ? output.slice(0, 600) + '...' : output;
         el.className = `event event-result${evt.error ? ' error' : ''}`;
-        el.textContent = `→ ${truncated}`;
+        el.textContent = truncated;
         return el;
     }
 
@@ -246,182 +302,195 @@
 
     function renderError(content) {
         const el = document.createElement('div');
-        el.className = 'event event-error-msg';
-        el.innerHTML = `⚠ ${esc(content)}`;
+        el.className = 'event event-error';
+        el.innerHTML = `⚠️ ${esc(content)}`;
         return el;
     }
 
     function renderFinished(content) {
         const el = document.createElement('div');
         el.className = 'event event-finished';
-        el.innerHTML = `✅ <strong>Finished:</strong> ${esc((content || '').slice(0, 500))}`;
+        el.innerHTML = `✅ <strong>Scan Complete:</strong> ${esc((content || '').slice(0, 500))}`;
         return el;
     }
 
     function renderVulns(vulns) {
         const list = document.getElementById('vuln-list');
-        if (list.querySelector('.empty-state')) list.innerHTML = '';
+        const empty = list.querySelector('.empty-state');
+        if (empty) list.innerHTML = '';
+        
+        document.getElementById('vuln-count').textContent = vulnCount;
+        
         vulns.forEach((v) => {
             const li = document.createElement('li');
             li.className = 'vuln-item';
             li.innerHTML = `
-                <div class="vuln-header" onclick="openVulnModal(this)">
-                    <span class="vuln-severity ${v.severity.toLowerCase()}"></span>
-                    <span class="vuln-title">${esc(v.title)}</span>
+                <div class="vuln-header" onclick="toggleVuln(this)">
+                    <span class="vuln-severity-dot ${v.severity.toLowerCase()}"></span>
+                    <span class="vuln-title-text">${esc(v.title)}</span>
                     <span class="vuln-badge ${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</span>
                 </div>
+                <div class="vuln-detail">
+                    <div class="vuln-detail-content">
+                        ${v.endpoint ? `<div class="vuln-row"><span class="vuln-label">Endpoint</span><span class="vuln-value"><code>${esc(v.endpoint)}</code></span></div>` : ''}
+                        ${v.method ? `<div class="vuln-row"><span class="vuln-label">Method</span><span class="vuln-value">${esc(v.method)}</span></div>` : ''}
+                        ${v.cvss ? `<div class="vuln-row"><span class="vuln-label">CVSS</span><span class="vuln-value">${v.cvss.toFixed(1)}</span></div>` : ''}
+                        ${v.cve ? `<div class="vuln-row"><span class="vuln-label">CVE</span><span class="vuln-value"><code>${esc(v.cve)}</code></span></div>` : ''}
+                        ${v.description ? `<div class="vuln-row"><span class="vuln-label">Description</span><span class="vuln-value">${esc(v.description)}</span></div>` : ''}
+                        ${v.poc_script ? `<div class="vuln-row"><span class="vuln-label">PoC</span><pre class="vuln-pre">${esc(v.poc_script)}</pre></div>` : ''}
+                        ${v.remediation ? `<div class="vuln-row"><span class="vuln-label">Remediation</span><span class="vuln-value">${esc(v.remediation)}</span></div>` : ''}
+                    </div>
+                </div>
             `;
-            // Store vuln data on the element
-            li.querySelector('.vuln-header')._vulnData = v;
+            li._vulnData = v;
             list.appendChild(li);
         });
     }
 
-    // Open vulnerability detail modal
-    window.openVulnModal = function(headerEl) {
-        const v = headerEl._vulnData;
-        if (!v) return;
-
-        const modal = document.getElementById('vuln-modal');
-        const content = document.getElementById('vuln-modal-content');
-
-        // Build modal HTML
-        let html = `
-            <div class="vuln-modal-title">
-                <span class="vuln-severity ${v.severity.toLowerCase()}" style="width:14px;height:14px"></span>
-                <h3>${esc(v.title)}</h3>
-            </div>
-            <div class="vuln-modal-meta">
-                <div class="vuln-modal-meta-item">
-                    <div class="vuln-modal-meta-label">Severity</div>
-                    <div class="vuln-modal-meta-value severity-${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</div>
-                </div>
-                <div class="vuln-modal-meta-item">
-                    <div class="vuln-modal-meta-label">CVSS Score</div>
-                    <div class="vuln-modal-meta-value severity-${v.severity.toLowerCase()}">${v.cvss ? v.cvss.toFixed(1) : 'N/A'}</div>
-                </div>
-                ${v.method ? `<div class="vuln-modal-meta-item"><div class="vuln-modal-meta-label">Method</div><div class="vuln-modal-meta-value">${esc(v.method)}</div></div>` : ''}
-                ${v.cve ? `<div class="vuln-modal-meta-item"><div class="vuln-modal-meta-label">CVE</div><div class="vuln-modal-meta-value vuln-modal-code">${esc(v.cve)}</div></div>` : ''}
-            </div>
-        `;
-
-        if (v.endpoint) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🔗 Endpoint</div><div class="vuln-modal-section-value"><code class="vuln-modal-code">${esc(v.endpoint)}</code></div></div>`;
-        if (v.description) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">📝 Description</div><div class="vuln-modal-section-value">${esc(v.description)}</div></div>`;
-        if (v.impact) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">💥 Impact</div><div class="vuln-modal-section-value">${esc(v.impact)}</div></div>`;
-        if (v.technical_analysis) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🔬 Technical Analysis</div><div class="vuln-modal-section-value">${esc(v.technical_analysis)}</div></div>`;
-        if (v.poc_description) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🧪 Proof of Concept</div><div class="vuln-modal-section-value">${esc(v.poc_description)}</div></div>`;
-        if (v.poc_script) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">📜 PoC Script</div><pre class="vuln-modal-pre">${esc(v.poc_script)}</pre></div>`;
-        if (v.remediation) html += `<div class="vuln-modal-section"><div class="vuln-modal-section-label">🛡️ Remediation</div><div class="vuln-modal-section-value">${esc(v.remediation)}</div></div>`;
-
-        content.innerHTML = html;
-        modal.style.display = 'flex';
+    // Toggle vuln expand
+    window.toggleVuln = function(el) {
+        el.parentElement.classList.toggle('expanded');
     };
 
-    // Close modal on ESC key
+    // Modal functions
+    window.openVulnModal = function(v) {
+        const modal = document.getElementById('vuln-modal');
+        const titleEl = document.getElementById('modal-title');
+        const bodyEl = document.getElementById('modal-body');
+        
+        titleEl.querySelector('#modal-severity-dot').className = `vuln-severity-dot ${v.severity.toLowerCase()}`;
+        document.getElementById('modal-vuln-title').textContent = v.title;
+        
+        let html = `
+            <div class="modal-meta">
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">Severity</div>
+                    <div class="modal-meta-value ${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</div>
+                </div>
+                <div class="modal-meta-item">
+                    <div class="modal-meta-label">CVSS</div>
+                    <div class="modal-meta-value ${v.severity.toLowerCase()}">${v.cvss ? v.cvss.toFixed(1) : 'N/A'}</div>
+                </div>
+                ${v.method ? `<div class="modal-meta-item"><div class="modal-meta-label">Method</div><div class="modal-meta-value">${esc(v.method)}</div></div>` : ''}
+                ${v.cve ? `<div class="modal-meta-item"><div class="modal-meta-label">CVE</div><div class="modal-meta-value"><code class="modal-code">${esc(v.cve)}</code></div></div>` : ''}
+            </div>
+        `;
+        
+        if (v.endpoint) html += `<div class="modal-section"><div class="modal-label">Endpoint</div><div class="modal-value"><code class="modal-code">${esc(v.endpoint)}</code></div></div>`;
+        if (v.description) html += `<div class="modal-section"><div class="modal-label">Description</div><div class="modal-value">${esc(v.description)}</div></div>`;
+        if (v.impact) html += `<div class="modal-section"><div class="modal-label">Impact</div><div class="modal-value">${esc(v.impact)}</div></div>`;
+        if (v.technical_analysis) html += `<div class="modal-section"><div class="modal-label">Technical Analysis</div><div class="modal-value">${esc(v.technical_analysis)}</div></div>`;
+        if (v.poc_description) html += `<div class="modal-section"><div class="modal-label">Proof of Concept</div><div class="modal-value">${esc(v.poc_description)}</div></div>`;
+        if (v.poc_script) html += `<div class="modal-section"><div class="modal-label">PoC Script</div><pre class="modal-pre">${esc(v.poc_script)}</pre></div>`;
+        if (v.remediation) html += `<div class="modal-section"><div class="modal-label">Remediation</div><div class="modal-value">${esc(v.remediation)}</div></div>`;
+        
+        bodyEl.innerHTML = html;
+        modal.classList.add('active');
+    };
+
+    window.closeModal = function() {
+        document.getElementById('vuln-modal').classList.remove('active');
+    };
+
+    // Close modal on click outside
+    document.getElementById('vuln-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeModal();
+    });
+
+    // Close help modal on click outside
+    document.getElementById('help-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeHelpModal();
+    });
+
+    // Close modal on ESC
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-            document.getElementById('vuln-modal').style.display = 'none';
+            closeModal();
+            closeHelpModal();
         }
     });
 
     function updateToolStats() {
-        const container = document.getElementById('tool-stats');
+        const list = document.getElementById('tools-list');
+        const countEl = document.getElementById('tools-count');
         const entries = Object.entries(toolUsage).sort((a, b) => b[1] - a[1]);
-        container.innerHTML = entries.map(([name, count]) => `
-      <div class="tool-stat">
-        <span class="tool-stat-name">${TOOL_ICONS[name] || '🔧'} ${name.replace(/_/g, ' ')}</span>
-        <span class="tool-stat-count">${count}</span>
-      </div>
-    `).join('');
+        
+        countEl.textContent = entries.length;
+        
+        if (entries.length === 0) {
+            list.innerHTML = '<li class="empty-state" style="padding: 20px 0"><div class="empty-title" style="font-size: 13px">No tools used yet</div></li>';
+            return;
+        }
+        
+        list.innerHTML = entries.map(([name, count]) => `
+            <li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-subtle)">
+                <span style="font-size:12px;color:var(--text-secondary)">${TOOL_ICONS[name] || '🔧'} ${name.replace(/_/g, ' ')}</span>
+                <span style="font-size:12px;font-weight:600;color:var(--accent-primary)">${count}</span>
+            </li>
+        `).join('');
     }
 
     // ── Queue UI ───────────────────────────────────────────
-    function showQueueBar(total) {
-        const bar = document.getElementById('queue-bar');
-        bar.style.display = '';
-        document.getElementById('queue-fill').style.width = '0%';
+    function showQueueBar() {
+        document.getElementById('queue-bar').classList.add('active');
     }
 
     function updateQueueBar(idx, total, target) {
-        document.getElementById('queue-label').textContent = `Target ${idx}/${total}`;
+        document.getElementById('queue-progress').textContent = `Scanning ${idx}/${total}`;
         document.getElementById('queue-target').textContent = target || '';
         document.getElementById('queue-fill').style.width = `${(idx / total) * 100}%`;
     }
 
     function hideQueueBar() {
-        document.getElementById('queue-bar').style.display = 'none';
-    }
-
-    function renderTargetList(targets) {
-        const card = document.getElementById('targets-card');
-        const list = document.getElementById('target-list');
-        card.style.display = '';
-        list.innerHTML = targets.map((t, i) => `
-      <li data-idx="${i}">
-        <span class="t-status pending"></span>
-        <span>${esc(t)}</span>
-      </li>
-    `).join('');
-        loadedTargets = targets;
-    }
-
-    function updateTargetList(idx, status) {
-        const list = document.getElementById('target-list');
-        const items = list.querySelectorAll('li');
-        if (items[idx]) {
-            const dot = items[idx].querySelector('.t-status');
-            dot.className = `t-status ${status}`;
-        }
+        document.getElementById('queue-bar').classList.remove('active');
     }
 
     // ── DOM Helpers ────────────────────────────────────────
     function addFeedItem(el, replace) {
-        const feed = document.getElementById('feed');
+        const feed = document.getElementById('feed-body');
         if (replace) {
-            const lastThinking = feed.querySelector('.event-thinking:last-of-type');
-            if (lastThinking) lastThinking.remove();
+            const lastThink = feed.querySelector('.event-think:last-of-type');
+            if (lastThink) lastThink.remove();
         }
         feed.appendChild(el);
         feed.scrollTop = feed.scrollHeight;
     }
 
-    function hideWelcome() {
-        const w = document.getElementById('welcome');
-        if (w) w.style.display = 'none';
+    function hideEmptyState() {
+        const empty = document.getElementById('empty-state');
+        if (empty) empty.style.display = 'none';
     }
 
     function setStatus(cls, text) {
         const badge = document.getElementById('status-badge');
         badge.className = `status-badge ${cls}`;
         document.getElementById('status-text').textContent = text;
-        // Toggle scanning classes on header, logo, feed, activity ring
-        const isScanning = cls === 'running';
-        document.querySelector('.header').classList.toggle('scanning', isScanning);
-        document.querySelector('.logo-icon').classList.toggle('scanning', isScanning);
-        document.querySelector('.feed').classList.toggle('scanning', isScanning);
-        document.getElementById('activity-ring').style.display = isScanning ? '' : 'none';
+        
+        const feedCard = document.getElementById('feed-card');
+        feedCard.classList.toggle('scanning', cls === 'running');
     }
 
     function toggleButtons(running) {
-        document.getElementById('btn-scan').style.display = running ? 'none' : '';
-        document.getElementById('btn-scan').disabled = false;
-        document.getElementById('btn-stop').style.display = running ? '' : 'none';
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        startBtn.classList.toggle('hidden', running);
+        stopBtn.classList.toggle('hidden', !running);
+        startBtn.disabled = false;
     }
 
-    function showReportButton(reportUrl) {
-        // Remove existing report button if any
-        const existing = document.getElementById('btn-report');
+    function showReportButton(url) {
+        // Remove existing
+        const existing = document.querySelector('.report-btn');
         if (existing) existing.remove();
-
+        
+        // Add to first sidebar card
+        const card = document.querySelector('.sidebar-card');
         const btn = document.createElement('a');
-        btn.id = 'btn-report';
-        btn.href = reportUrl;
+        btn.href = url;
         btn.target = '_blank';
-        btn.className = 'report-download-btn';
+        btn.className = 'report-btn';
         btn.innerHTML = '📄 Download PDF Report';
-        // Insert after the buttons section
-        const btnStop = document.getElementById('btn-stop');
-        btnStop.parentElement.insertBefore(btn, btnStop.nextSibling);
+        card.parentNode.insertBefore(btn, card.nextSibling);
     }
 
     function hasToolTags(str) {
@@ -444,24 +513,22 @@
     }
 
     function startTimer(startFrom) {
-        scanStart = startFrom ? startFrom.getTime() : Date.now();
-        // Show immediately
-        const elapsed = Math.floor((Date.now() - scanStart) / 1000);
-        document.getElementById('duration').textContent = formatDuration(elapsed);
+        scanStart = startFrom ? new Date(startFrom).getTime() : Date.now();
         timerInterval = setInterval(() => {
             const elapsed = Math.floor((Date.now() - scanStart) / 1000);
-            document.getElementById('duration').textContent = formatDuration(elapsed);
+            document.getElementById('live-clock').textContent = formatDuration(elapsed);
         }, 1000);
     }
 
-    function stopTimer() { if (timerInterval) clearInterval(timerInterval); }
+    function stopTimer() { 
+        if (timerInterval) clearInterval(timerInterval); 
+    }
 
     // ── Stat Pop Animation ─────────────────────────────────
-    function popStat(id, value) {
+    function popStat(id) {
         const el = document.getElementById(id);
-        el.textContent = value;
         el.classList.remove('pop');
-        void el.offsetWidth; // force reflow
+        void el.offsetWidth;
         el.classList.add('pop');
     }
 
@@ -471,8 +538,7 @@
         const h = String(now.getHours()).padStart(2, '0');
         const m = String(now.getMinutes()).padStart(2, '0');
         const s = String(now.getSeconds()).padStart(2, '0');
-        const el = document.getElementById('live-clock');
-        if (el) el.textContent = `${h}:${m}:${s}`;
+        document.getElementById('live-clock').textContent = `${h}:${m}:${s}`;
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -489,11 +555,8 @@
             .then(r => r.json())
             .then(data => {
                 if (data.targets && data.targets.length > 0) {
-                    // Put targets in input (comma-separated for display)
                     document.getElementById('target-input').value = data.targets.join(', ');
                     loadedTargets = data.targets;
-                    renderTargetList(data.targets);
-                    // Mark button as loaded
                     input.closest('.file-btn').classList.add('loaded');
                 }
             })
@@ -523,16 +586,17 @@
     window.startScan = function () {
         const targetInput = document.getElementById('target-input').value.trim();
         if (!targetInput) {
-            document.getElementById('target-input').focus();
-            document.getElementById('target-input').style.borderColor = '#ef4444';
-            setTimeout(() => document.getElementById('target-input').style.borderColor = '', 2000);
+            targetInput = document.getElementById('target-input');
+            targetInput.focus();
+            targetInput.style.borderColor = '#ff4757';
+            setTimeout(() => targetInput.style.borderColor = '', 2000);
             return;
         }
 
         const instruction = document.getElementById('instruction-input').value.trim();
         const scanMode = document.getElementById('scan-mode').value;
 
-        // Use loaded targets if available, otherwise parse comma-separated
+        // Parse targets
         let targets;
         if (loadedTargets.length > 0) {
             targets = loadedTargets;
@@ -544,17 +608,18 @@
         iterCount = 0; toolCount = 0; vulnCount = 0; eventCount = 0;
         currentTargetIdx = 0; totalTargets = targets.length;
         Object.keys(toolUsage).forEach(k => delete toolUsage[k]);
-        document.getElementById('stat-iter').textContent = '0';
-        document.getElementById('stat-tools').textContent = '0';
-        document.getElementById('stat-vulns').textContent = '0';
-        document.getElementById('feed').innerHTML = '';
-        document.getElementById('vuln-list').innerHTML = '<li class="empty-state">Scanning...</li>';
-        document.getElementById('tool-stats').innerHTML = '<div class="empty-state" style="grid-column:1/-1">Waiting...</div>';
-
-        // Show target list if multiple
-        if (targets.length > 1) {
-            renderTargetList(targets);
-        }
+        
+        ['stat-iter', 'stat-tools', 'stat-vulns'].forEach(id => {
+            document.getElementById(id).textContent = '0';
+        });
+        
+        document.getElementById('feed-body').innerHTML = '';
+        document.getElementById('vuln-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Scanning...</div></li>';
+        document.getElementById('tools-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Waiting...</div></li>';
+        
+        // Remove report button if exists
+        const reportBtn = document.querySelector('.report-btn');
+        if (reportBtn) reportBtn.remove();
 
         scanRunning = true;
         toggleButtons(true);
@@ -563,7 +628,7 @@
 
         const payload = { targets, instruction, scan_mode: scanMode };
 
-        // Include LLM provider settings if user configured them
+        // Include LLM provider settings
         const provider = document.getElementById('llm-provider').value;
         const modelInput = document.getElementById('llm-model').value.trim();
         const apiKey = document.getElementById('llm-apikey').value.trim();
@@ -576,7 +641,7 @@
         if (apiKey) payload.api_key = apiKey;
         if (apiBase) payload.api_base = apiBase;
 
-        const discordWebhook = document.getElementById('discord-webhook').value.trim();
+        const discordWebhook = document.getElementById('discord-webhook')?.value?.trim();
         if (discordWebhook) payload.discord_webhook = discordWebhook;
 
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -594,96 +659,51 @@
         fetch('/api/stop', { method: 'POST' });
     };
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !scanRunning && document.activeElement.tagName !== 'TEXTAREA') {
-            window.startScan();
-        }
-    });
+    window.clearFeed = function() {
+        document.getElementById('feed-body').innerHTML = `
+            <div class="empty-state" id="empty-state">
+                <div class="empty-icon">🎯</div>
+                <div class="empty-title">Ready to Scan</div>
+                <div class="empty-desc">Enter a target and start your pentest</div>
+            </div>
+        `;
+    };
 
-    connect();
+    window.downloadEvents = function() {
+        const feed = document.getElementById('feed-body');
+        const text = feed.innerText;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'xalgorix-feed.txt';
+        a.click();
+    };
 
-    // ── Always check if server has a running scan ────────────
-    async function checkServerStatus() {
-        try {
-            const resp = await fetch('/api/status');
-            const status = await resp.json();
-            if (status.running === true && status.scan_id) {
-                // Immediately show correct state
-                scanRunning = true;
-                toggleButtons(true);
-                setStatus('running', 'SCANNING');
-                hideWelcome();
-                // If URL doesn't match the running scan, update it
-                const currentPath = window.location.pathname.replace('/', '');
-                if (currentPath !== status.scan_id) {
-                    history.replaceState(null, '', '/' + status.scan_id);
-                }
-                // Load the scan data
-                await loadLastScan();
-            } else {
-                // Not running, still try to load if URL has a scan ID
-                await loadLastScan();
-            }
-        } catch (e) {
-            // Fallback: just try loading from URL
-            await loadLastScan();
-        }
-    }
+    window.scrollToBottom = function() {
+        const feed = document.getElementById('feed-body');
+        feed.scrollTop = feed.scrollHeight;
+    };
 
-    checkServerStatus();
-
-    // ── Load Scan on Page Init (only if URL has a scan hash) ─────
-    function resetUI() {
-        // Clear all JS state
-        iterCount = 0;
-        toolCount = 0;
-        eventCount = 0;
-        vulnCount = 0;
-        toolUsage = {};
-        // Clear DOM
-        document.getElementById('stat-iter').textContent = '0';
-        document.getElementById('stat-tools').textContent = '0';
-        document.getElementById('stat-vulns').textContent = '0';
-        document.getElementById('stat-tokens').textContent = '0';
-        document.getElementById('total-events').textContent = '0';
-        document.getElementById('event-count').textContent = '0 events';
-        document.getElementById('duration').textContent = '0s';
-        document.getElementById('feed-body').innerHTML = '';
-        document.getElementById('vuln-list').innerHTML = '<div class="empty-state">No vulnerabilities found yet</div>';
-        const toolStatsEl = document.getElementById('tool-stats');
-        if (toolStatsEl) toolStatsEl.innerHTML = '<div class="empty-state">No tools called yet</div>';
-        document.getElementById('target-input').value = '';
-        // Remove report button if exists
-        const reportBtn = document.getElementById('btn-report');
-        if (reportBtn) reportBtn.remove();
-    }
-
-    async function loadLastScan() {
+    window.loadLastScan = async function() {
         const scanId = window.location.pathname.replace('/', '');
-        if (!scanId) return; // Root path = clean idle page
+        if (!scanId) return;
 
         try {
-            // Load specific scan by ID from URL path
             const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
             const scan = await resp.json();
             if (!scan || !scan.id) return;
 
-            // Reset UI to prevent mixing with previous scan data
-            resetUI();
-
-            // Hide welcome message since we have scan data
-            hideWelcome();
-
-            // Restore stats
+            // Reset UI
             iterCount = scan.iterations || 0;
             toolCount = scan.tool_calls || 0;
-            eventCount = (scan.events || []).length;
+            vulnCount = (scan.vulns || []).length;
+            
             document.getElementById('stat-iter').textContent = String(iterCount);
             document.getElementById('stat-tools').textContent = String(toolCount);
-            document.getElementById('total-events').textContent = eventCount;
-            document.getElementById('event-count').textContent = `${eventCount} events`;
+            document.getElementById('stat-vulns').textContent = String(vulnCount);
 
-            // Restore tokens
+            // Tokens
             if (scan.total_tokens > 0) {
                 const formatted = scan.total_tokens >= 1000000
                     ? (scan.total_tokens / 1000000).toFixed(1) + 'M'
@@ -693,92 +713,60 @@
                 document.getElementById('stat-tokens').textContent = formatted;
             }
 
-            // Restore vulns
+            // Vulns
             if (scan.vulns && scan.vulns.length > 0) {
-                vulnCount = scan.vulns.length;
-                document.getElementById('stat-vulns').textContent = String(vulnCount);
                 renderVulns(scan.vulns);
             }
 
-            // Replay events into feed (limit to last 100 for performance)
+            // Events
             const feed = document.getElementById('feed-body');
             feed.innerHTML = '';
             const events = scan.events || [];
-            if (events.length === 0) {
-                const div = document.createElement('div');
-                div.className = 'event-item';
-                div.innerHTML = `<span class="event-text dim">Scan ${scan.status === 'running' ? 'in progress' : 'data available'} for ${escapeHtml(scan.target || 'unknown')}</span>`;
-                feed.appendChild(div);
+            
+            if (events.length > 0) {
+                events.slice(-100).forEach(evt => {
+                    const div = document.createElement('div');
+                    if (evt.type === 'thinking') {
+                        div.className = 'event event-think';
+                        div.innerHTML = `<div class="typing"><span></span><span></span><span></span></div> ${esc(evt.content || '')}`;
+                    } else if (evt.type === 'tool_call') {
+                        div.className = 'event event-tool';
+                        div.innerHTML = `<div class="event-tool-header"><span class="event-tool-icon">${TOOL_ICONS[evt.tool_name] || '🔧'}</span><span class="event-tool-name">${esc(evt.tool_name)}</span></div>`;
+                    } else if (evt.type === 'tool_result') {
+                        div.className = 'event event-result';
+                        div.textContent = (evt.output || '').slice(0, 200);
+                    } else if (evt.type === 'message') {
+                        div.className = 'event event-message';
+                        div.textContent = evt.content;
+                    } else if (evt.type === 'finished') {
+                        div.className = 'event event-finished';
+                        div.textContent = `✅ ${evt.content || 'Completed'}`;
+                    }
+                    if (div.innerHTML) feed.appendChild(div);
+                });
             }
-            const eventsToShow = events.slice(-100);
-            eventsToShow.forEach(evt => {
-                const div = document.createElement('div');
-                div.className = 'event-item';
-                if (evt.type === 'thinking') {
-                    div.innerHTML = `<span class="event-icon">◈</span> <span class="event-text dim">${escapeHtml(evt.content || '')}</span>`;
-                } else if (evt.type === 'tool_call') {
-                    const icon = TOOL_ICONS[evt.tool_name] || '🔧';
-                    div.innerHTML = `<span class="event-icon">${icon}</span> <span class="event-tool">${evt.tool_name}</span>`;
-                } else if (evt.type === 'tool_result') {
-                    const txt = evt.error ? `ERROR: ${evt.error}` : (evt.output || '').slice(0, 200);
-                    div.className += evt.error ? ' event-error-msg' : '';
-                    div.innerHTML = `<span class="event-text dim">→ ${escapeHtml(txt)}</span>`;
-                } else if (evt.type === 'message') {
-                    div.innerHTML = `<span class="event-text">${escapeHtml(evt.content || '')}</span>`;
-                } else if (evt.type === 'finished') {
-                    div.className += ' event-finished';
-                    div.innerHTML = `<span class="event-icon">✅</span> <span class="event-text">${escapeHtml(evt.content || 'Scan completed')}</span>`;
-                }
-                if (div.innerHTML) feed.appendChild(div);
-            });
 
-            // Restore tool usage
+            // Tool usage
             (scan.events || []).filter(e => e.type === 'tool_call').forEach(e => {
                 toolUsage[e.tool_name] = (toolUsage[e.tool_name] || 0) + 1;
             });
             updateToolStats();
 
-            // Set status — check actual server state, not stale scan record
-            const badge = document.getElementById('status-badge');
-            const statusText = document.getElementById('status-text');
-            let actuallyRunning = false;
+            // Status
             try {
                 const statusResp = await fetch('/api/status');
                 const serverStatus = await statusResp.json();
-                actuallyRunning = serverStatus.running === true;
-            } catch (e) { /* ignore */ }
-
-            badge.className = 'status-badge idle';
-            if (actuallyRunning) {
-                statusText.textContent = 'SCANNING';
-                badge.className = 'status-badge running';
-                scanRunning = true;
-                toggleButtons(true);
-                // Resume timer from original start time
-                startTimer(scan.started_at ? new Date(scan.started_at) : null);
-            } else if (scan.status === 'finished') {
-                statusText.textContent = 'COMPLETED';
-                // Show final elapsed time for completed scans
-                if (scan.started_at) {
-                    const start = new Date(scan.started_at);
-                    const end = scan.finished_at ? new Date(scan.finished_at) : new Date();
-                    const elapsed = Math.floor((end - start) / 1000);
-                    document.getElementById('duration').textContent = formatDuration(elapsed);
+                if (serverStatus.running) {
+                    setStatus('running', 'SCANNING');
+                    scanRunning = true;
+                    toggleButtons(true);
+                    startTimer(scan.started_at ? new Date(scan.started_at) : null);
+                } else if (scan.status === 'finished') {
+                    setStatus('finished', 'COMPLETED');
+                    showReportButton(`/api/report/${encodeURIComponent(scan.id)}`);
                 }
-                // Show report download button for completed scans
-                showReportButton(`/api/report/${encodeURIComponent(scan.id)}`);
-            } else {
-                statusText.textContent = 'IDLE';
-                // Still show elapsed time from saved data
-                if (scan.started_at) {
-                    const start = new Date(scan.started_at);
-                    const end = scan.finished_at ? new Date(scan.finished_at) : new Date();
-                    const elapsed = Math.floor((end - start) / 1000);
-                    document.getElementById('duration').textContent = formatDuration(elapsed);
-                }
-            }
+            } catch (e) {}
 
-            // Show target in input
             if (scan.target) {
                 document.getElementById('target-input').value = scan.target;
             }
@@ -787,9 +775,25 @@
         } catch (e) {
             console.log('No previous scan to restore');
         }
-    }
+    };
 
-    // ── LLM Provider Change Handler ───────────────────────
+    window.showHelp = function() {
+        const modal = document.getElementById('help-modal');
+        modal.classList.add('active');
+    };
+
+    window.closeHelpModal = function() {
+        document.getElementById('help-modal').classList.remove('active');
+    };
+
+    // Enter key to start scan
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !scanRunning && document.activeElement.tagName !== 'TEXTAREA') {
+            window.startScan();
+        }
+    });
+
+    // LLM Provider Change
     window.onProviderChange = function () {
         const provider = document.getElementById('llm-provider').value;
         const p = LLM_PROVIDERS[provider] || {};
@@ -797,6 +801,69 @@
         document.getElementById('llm-apibase').value = p.base || '';
         document.getElementById('llm-model').placeholder = p.model ? `e.g. ${p.model}` : 'Model name';
     };
-    // Auto-fill default on load
+
+    // Rate Limiting
+    window.saveRateLimit = async function() {
+        const requests = parseInt(document.getElementById('rate-limit-requests').value) || 60;
+        const windowSec = parseInt(document.getElementById('rate-limit-window').value) || 60;
+        
+        try {
+            const resp = await fetch('/api/settings/rate-limit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requests, window: windowSec })
+            });
+            const data = await resp.json();
+            
+            const statusEl = document.getElementById('rate-limit-status');
+            statusEl.textContent = `✅ Saved: ${data.requests} requests/${data.window}s`;
+            statusEl.style.color = 'var(--success)';
+            
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                statusEl.textContent = '';
+            }, 3000);
+        } catch (err) {
+            const statusEl = document.getElementById('rate-limit-status');
+            statusEl.textContent = '❌ Failed to save';
+            statusEl.style.color = 'var(--danger)';
+        }
+    };
+
+    async function loadRateLimitSettings() {
+        try {
+            const resp = await fetch('/api/settings/rate-limit');
+            const data = await resp.json();
+            document.getElementById('rate-limit-requests').value = data.requests;
+            document.getElementById('rate-limit-window').value = data.window;
+        } catch (err) {
+            console.log('Could not load rate limit settings');
+        }
+    }
+
+    // Initialize
     window.onProviderChange();
+    loadRateLimitSettings();
+    connect();
+    
+    // Check server status
+    async function checkServerStatus() {
+        try {
+            const resp = await fetch('/api/status');
+            const status = await resp.json();
+            if (status.running && status.scan_id) {
+                scanRunning = true;
+                toggleButtons(true);
+                setStatus('running', 'SCANNING');
+                history.replaceState(null, '', '/' + status.scan_id);
+                await loadLastScan();
+            } else {
+                await loadLastScan();
+            }
+        } catch (e) {
+            await loadLastScan();
+        }
+    }
+    
+    checkServerStatus();
 })();
