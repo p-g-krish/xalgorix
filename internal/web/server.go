@@ -130,7 +130,25 @@ func (s *Server) Start() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
+	// SPA handler: serve static files if they exist, otherwise serve index.html
+	fileServer := http.FileServer(http.FS(staticFS))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Try to serve the static file
+		path := r.URL.Path
+		if path == "/" {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// Check if it's a real static file
+		f, err := staticFS.(fs.ReadFileFS).ReadFile(path[1:]) // strip leading /
+		if err == nil && f != nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// Not a static file — serve index.html (SPA catch-all)
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/api/scan", s.handleScan)
 	mux.HandleFunc("/api/stop", s.handleStop)

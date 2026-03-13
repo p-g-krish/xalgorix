@@ -82,9 +82,9 @@
                 updateQueueBar(currentTargetIdx, totalTargets, evt.target);
                 updateTargetList(currentTargetIdx - 1, 'active');
                 addFeedItem(renderTargetBanner(evt.content));
-                // Set URL hash to scan ID so this scan has a unique URL
+                // Set URL path to scan ID so this scan has a unique URL
                 if (evt.agent_id) {
-                    window.location.hash = evt.agent_id;
+                    history.pushState(null, '', '/' + evt.agent_id);
                 }
                 break;
 
@@ -552,12 +552,12 @@
 
     // ── Load Scan on Page Init (only if URL has a scan hash) ─────
     async function loadLastScan() {
-        const hash = window.location.hash.replace('#', '');
-        if (!hash) return; // No hash = clean idle page
+        const scanId = window.location.pathname.replace('/', '');
+        if (!scanId) return; // Root path = clean idle page
 
         try {
-            // Load specific scan by ID from hash
-            const resp = await fetch(`/api/scans/${encodeURIComponent(hash)}`);
+            // Load specific scan by ID from URL path
+            const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
             const scan = await resp.json();
             if (!scan || !scan.id) return;
 
