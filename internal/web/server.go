@@ -157,6 +157,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/scans/", s.handleGetScan)
 	mux.HandleFunc("/api/upload-targets", s.handleUploadTargets)
 	mux.HandleFunc("/api/upload-instructions", s.handleUploadInstructions)
+	mux.HandleFunc("/api/report/", s.handleDownloadReport)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("Xalgorix Web UI → http://localhost:%d", s.port)
@@ -565,6 +566,19 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 	}
 
 	s.saveScanRecord(&scanRecord)
+
+	// Generate PDF report
+	reportPath, err := s.generateReport(&scanRecord)
+	if err != nil {
+		log.Printf("Failed to generate PDF report: %v", err)
+	} else {
+		log.Printf("PDF report saved: %s", reportPath)
+		// Notify via WebSocket that report is ready
+		s.broadcast(WSEvent{
+			Type:    "report_ready",
+			Content: fmt.Sprintf("/api/report/%s", scanRecord.ID),
+		})
+	}
 }
 
 // vulnToSummary converts a reporting.Vulnerability to a VulnSummary with all fields.
@@ -641,6 +655,41 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(scans)
+}
+
+// handleDownloadReport serves the PDF report for a scan.
+func (s *Server) handleDownloadReport(w http.ResponseWriter, r *http.Request) {
+	scanID := strings.TrimPrefix(r.URL.Path, "/api/report/")
+	if scanID == "" {
+		http.Error(w, "scan ID required", http.StatusBadRequest)
+		return
+	}
+
+	reportPath := filepath.Join(s.dataDir, "scans", scanID, fmt.Sprintf("xalgorix_report_%s.pdf", scanID))
+
+	// If report doesn't exist, try to generate it
+	if _, err := os.Stat(reportPath); os.IsNotExist(err) {
+		// Load scan record
+		scanPath := filepath.Join(s.dataDir, "scans", scanID, "scan.json")
+		data, err := os.ReadFile(scanPath)
+		if err != nil {
+			http.Error(w, "scan not found", http.StatusNotFound)
+			return
+		}
+		var rec ScanRecord
+		if json.Unmarshal(data, &rec) != nil {
+			http.Error(w, "invalid scan data", http.StatusInternalServerError)
+			return
+		}
+		if _, err := s.generateReport(&rec); err != nil {
+			http.Error(w, "failed to generate report", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"xalgorix_report_%s.pdf\"", scanID))
+	http.ServeFile(w, r, reportPath)
 }
 
 // handleGetScan returns a specific scan's full data.

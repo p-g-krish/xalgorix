@@ -102,6 +102,17 @@
                 addFeedItem(renderBanner('🏁', evt.content, 'green'));
                 break;
 
+            case 'report_ready':
+                // Show download button in feed
+                const reportUrl = evt.content;
+                const reportDiv = document.createElement('div');
+                reportDiv.className = 'event-item event-report';
+                reportDiv.innerHTML = `<span class="event-icon">📄</span> <a href="${reportUrl}" target="_blank" class="report-download-btn">Download PDF Report</a>`;
+                document.getElementById('feed-body').appendChild(reportDiv);
+                // Also show a persistent download button
+                showReportButton(reportUrl);
+                break;
+
             case 'scan_started':
                 setStatus('running', 'SCANNING');
                 hideWelcome();
@@ -395,6 +406,22 @@
         document.getElementById('btn-scan').style.display = running ? 'none' : '';
         document.getElementById('btn-scan').disabled = false;
         document.getElementById('btn-stop').style.display = running ? '' : 'none';
+    }
+
+    function showReportButton(reportUrl) {
+        // Remove existing report button if any
+        const existing = document.getElementById('btn-report');
+        if (existing) existing.remove();
+
+        const btn = document.createElement('a');
+        btn.id = 'btn-report';
+        btn.href = reportUrl;
+        btn.target = '_blank';
+        btn.className = 'report-download-btn';
+        btn.innerHTML = '📄 Download PDF Report';
+        // Insert after the buttons section
+        const btnStop = document.getElementById('btn-stop');
+        btnStop.parentElement.insertBefore(btn, btnStop.nextSibling);
     }
 
     function hasToolTags(str) {
@@ -697,6 +724,8 @@
                     const elapsed = Math.floor((end - start) / 1000);
                     document.getElementById('duration').textContent = formatDuration(elapsed);
                 }
+                // Show report download button for completed scans
+                showReportButton(`/api/report/${encodeURIComponent(scan.id)}`);
             } else {
                 statusText.textContent = 'IDLE';
                 // Still show elapsed time from saved data

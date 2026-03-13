@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-rod/rod v0.116.2
 	github.com/gorilla/websocket v1.5.3
 )
