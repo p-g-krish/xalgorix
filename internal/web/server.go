@@ -457,7 +457,43 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 						} else if vs.Severity == "low" || vs.Severity == "info" {
 							sevColor = 0x3b82f6
 						}
-						s.sendDiscord(sevColor, fmt.Sprintf("🐛 %s Vulnerability Found", strings.ToUpper(vs.Severity)), fmt.Sprintf("**%s**\n\n**Endpoint:** %s\n**CVSS:** %.1f\n**Severity:** %s", vs.Title, vs.Endpoint, vs.CVSS, strings.ToUpper(vs.Severity)))
+						// Build detailed description with all available fields
+						var details strings.Builder
+						details.WriteString(fmt.Sprintf("**%s**\n\n", vs.Title))
+						if vs.Description != "" {
+							details.WriteString(fmt.Sprintf("📝 **Description:**\n%s\n\n", vs.Description))
+						}
+						if vs.Endpoint != "" {
+							details.WriteString(fmt.Sprintf("🔗 **Endpoint:** `%s`\n", vs.Endpoint))
+						}
+						if vs.Method != "" {
+							details.WriteString(fmt.Sprintf("📡 **Method:** `%s`\n", vs.Method))
+						}
+						if vs.CVE != "" {
+							details.WriteString(fmt.Sprintf("🏷️ **CVE:** `%s`\n", vs.CVE))
+						}
+						details.WriteString(fmt.Sprintf("📊 **CVSS:** `%.1f` | **Severity:** `%s`\n\n", vs.CVSS, strings.ToUpper(vs.Severity)))
+						if vs.Impact != "" {
+							details.WriteString(fmt.Sprintf("💥 **Impact:**\n%s\n\n", vs.Impact))
+						}
+						if vs.TechnicalAnalysis != "" {
+							details.WriteString(fmt.Sprintf("🔬 **Technical Analysis:**\n%s\n\n", vs.TechnicalAnalysis))
+						}
+						if vs.PoCDescription != "" {
+							details.WriteString(fmt.Sprintf("🧪 **PoC:**\n%s\n", vs.PoCDescription))
+						}
+						if vs.PoCScript != "" {
+							// Truncate PoC script for Discord (max 1024 per field)
+							poc := vs.PoCScript
+							if len(poc) > 800 {
+								poc = poc[:800] + "\n... (truncated)"
+							}
+							details.WriteString(fmt.Sprintf("```\n%s\n```\n\n", poc))
+						}
+						if vs.Remediation != "" {
+							details.WriteString(fmt.Sprintf("🛡️ **Remediation:**\n%s", vs.Remediation))
+						}
+						s.sendDiscord(sevColor, fmt.Sprintf("🐛 %s Vulnerability Found", strings.ToUpper(vs.Severity)), details.String())
 					}
 				}
 			}
