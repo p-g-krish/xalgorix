@@ -89,7 +89,7 @@ sudo cp xalgorix /usr/local/bin/
 
 ```bash
 # Required — LLM provider
-export XALGORIX_LLM="openai/gpt-4o"              # or anthropic/claude-sonnet-4, deepseek/deepseek-chat, etc.
+export XALGORIX_LLM="openai/gpt-5.4"              # or anthropic/claude-sonnet-4.6, deepseek/deepseek-v4, etc.
 export XALGORIX_API_KEY="sk-your-key-here"
 export XALGORIX_API_BASE="https://api.openai.com/v1"  # provider API base
 
@@ -188,7 +188,7 @@ All configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XALGORIX_LLM` | *(required)* | Model name (e.g. `openai/gpt-4o`) |
+| `XALGORIX_LLM` | *(required)* | Model name (e.g. `openai/gpt-5.4`) |
 | `XALGORIX_API_KEY` | *(required)* | API key |
 | `XALGORIX_API_BASE` | `https://api.openai.com/v1` | API base URL |
 | `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL for notifications |
@@ -244,13 +244,13 @@ Works with any OpenAI-compatible chat completions API:
 
 | Provider | Model Example | Tested |
 |----------|--------------|--------|
-| OpenAI | `openai/gpt-4o` | ✅ |
-| Anthropic | `anthropic/claude-sonnet-4` | ✅ |
-| DeepSeek | `deepseek/deepseek-chat` | ✅ |
-| Google | `google/gemini-2.5-flash` | ✅ |
-| Groq | `groq/llama-3.3-70b` | ✅ |
+| OpenAI | `openai/gpt-5.4` | ✅ |
+| Anthropic | `anthropic/claude-sonnet-4.6` | ✅ |
+| DeepSeek | `deepseek/deepseek-v4` | ✅ |
+| Google | `google/gemini-3.1-pro` | ✅ |
+| Groq | `groq/llama-4-70b` | ✅ |
 | MiniMax | `minimax/MiniMax-M2.5` | ✅ |
-| Ollama | `ollama/llama3` | ✅ (local) |
+| Ollama | `ollama/llama4` | ✅ (local) |
 
 ## License
 
