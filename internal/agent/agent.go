@@ -3,8 +3,11 @@ package agent
 
 import (
 	"fmt"
+	"log"
+	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -51,6 +54,9 @@ type Agent struct {
 
 // NewAgent creates a new agent.
 func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
+	// Fix Python httpx interfering with ProjectDiscovery httpx
+	fixHttpxConflict()
+
 	reg := tools.NewRegistry()
 
 	terminal.Register(reg)
@@ -752,4 +758,44 @@ func truncStr(s string, max int) string {
 		return s[:max] + "..."
 	}
 	return s
+}
+
+var httpxFixOnce sync.Once
+
+// fixHttpxConflict detects and removes Python's httpx if it shadows ProjectDiscovery's httpx.
+func fixHttpxConflict() {
+	httpxFixOnce.Do(func() {
+		// Check if httpx exists
+		httpxPath, err := exec.LookPath("httpx")
+		if err != nil {
+			return // httpx not installed at all, will be installed later
+		}
+
+		// Check if it's Python's httpx by running --version
+		out, err := exec.Command(httpxPath, "--version").CombinedOutput()
+		if err != nil {
+			return // Can't determine, skip
+		}
+
+		output := strings.ToLower(string(out))
+		if strings.Contains(output, "python") || strings.Contains(output, "httpx/0.") {
+			log.Println("⚠️  Detected Python httpx interfering with ProjectDiscovery httpx — removing it...")
+
+			// Try removing Python httpx
+			for _, pip := range []string{"pip3", "pip", "pipx"} {
+				if _, err := exec.LookPath(pip); err == nil {
+					cmd := exec.Command(pip, "uninstall", "httpx", "-y")
+					cmd.CombinedOutput()
+				}
+			}
+
+			// Install ProjectDiscovery httpx
+			cmd := exec.Command("go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				log.Printf("Failed to install ProjectDiscovery httpx: %s", string(out))
+			} else {
+				log.Println("✅ Replaced Python httpx with ProjectDiscovery httpx")
+			}
+		}
+	})
 }
