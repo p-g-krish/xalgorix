@@ -992,7 +992,13 @@ body {
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
+
+/* Tablet */
 @media (max-width: 900px) {
+  .app {
+    padding: 16px;
+  }
+
   .main {
     grid-template-columns: 1fr;
   }
@@ -1000,10 +1006,263 @@ body {
   .header {
     flex-wrap: wrap;
     gap: 12px;
+    padding: 14px 18px;
+  }
+
+  .header-stats {
+    gap: 14px;
+  }
+
+  .stat-value {
+    font-size: 18px;
   }
 
   .control-panel {
     grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .btn-group {
+    flex-direction: row;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+
+  .sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .sidebar .card {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .feed {
+    max-height: 50vh;
+  }
+
+  .vuln-modal {
+    width: 90vw;
+    max-width: 90vw;
+    max-height: 85vh;
+  }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .app {
+    padding: 10px;
+  }
+
+  .header {
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    border-radius: 8px;
+  }
+
+  .logo-text {
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+
+  .logo-tag {
+    font-size: 9px;
+    display: none;
+  }
+
+  .header-stats {
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    order: 3;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .stat-label {
+    font-size: 8px;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    padding: 4px 10px;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+
+  .duration {
+    font-size: 12px;
+  }
+
+  .control-panel {
+    padding: 12px;
+    margin-bottom: 14px;
+    gap: 8px;
+  }
+
+  .input-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .input-field {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .btn-group {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    font-size: 12px;
+    flex: 1;
+  }
+
+  .main {
+    gap: 14px;
+  }
+
+  .feed {
+    max-height: 45vh;
+  }
+
+  .feed-header {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  .event-item {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .sidebar {
+    flex-direction: column;
+  }
+
+  .sidebar .card {
+    min-width: unset;
+  }
+
+  .card-header {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  .card-body {
+    padding: 10px 14px;
+  }
+
+  .vuln-modal-overlay {
+    padding: 10px;
+  }
+
+  .vuln-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: 12px;
+  }
+
+  .vuln-modal-header {
+    padding: 14px 16px;
+  }
+
+  .vuln-modal-content {
+    padding: 14px 16px;
+  }
+
+  .report-download-btn {
+    padding: 8px 14px;
+    font-size: 12px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Settings panels */
+  .settings-panel {
+    padding: 12px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Queue bar */
+  .queue-bar {
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 400px) {
+  .app {
+    padding: 6px;
+  }
+
+  .header {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+
+  .header-stats {
+    gap: 6px;
+  }
+
+  .stat {
+    min-width: 40px;
+  }
+
+  .stat-value {
+    font-size: 14px;
+  }
+
+  .control-panel {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+
+  .feed {
+    border-radius: 10px;
+    max-height: 40vh;
+  }
+
+  .card {
+    border-radius: 10px;
+  }
+
+  .vuln-modal {
+    border-radius: 10px;
   }
 }
 
