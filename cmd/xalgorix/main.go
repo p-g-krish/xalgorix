@@ -33,6 +33,11 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("✅ Updated successfully!")
+		// Show the version we updated to
+		verCmd := exec.Command("xalgorix", "--version")
+		verCmd.Stdout = os.Stdout
+		verCmd.Stderr = os.Stderr
+		verCmd.Run()
 		os.Exit(0)
 	}
 
