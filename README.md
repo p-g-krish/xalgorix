@@ -78,6 +78,8 @@ internal/
 go install github.com/xalgord/xalgorix/cmd/xalgorix@latest
 ```
 
+> **💡 Recommended:** Install and run as `root` user to avoid permission issues when Xalgorix auto-installs missing security tools (nmap, nuclei, subfinder, etc.).
+
 <details>
 <summary>Or build from source</summary>
 
