@@ -74,11 +74,20 @@ internal/
 ### Install
 
 ```bash
+go install github.com/xalgord/xalgorix/cmd/xalgorix@latest
+```
+
+<details>
+<summary>Or build from source</summary>
+
+```bash
 git clone https://github.com/xalgord/xalgorix.git
 cd xalgorix
-go build -ldflags "-s -w -X main.version=0.1.0" -o xalgorix ./cmd/xalgorix/
-sudo cp xalgorix /usr/local/bin/
+go build -ldflags "-s -w" -o xalgorix ./cmd/xalgorix/
+sudo mv xalgorix /usr/local/bin/
 ```
+
+</details>
 
 ### Configure
 
