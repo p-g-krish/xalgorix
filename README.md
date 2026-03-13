@@ -6,7 +6,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Author](https://img.shields.io/badge/Author-@xalgord-00ff88?style=for-the-badge&logo=github&logoColor=white)](https://github.com/xalgord)
-[![License](https://img.shields.io/badge/License-Private-ef4444?style=for-the-badge)]()
+[![License](https://img.shields.io/badge/License-MIT-00ff88?style=for-the-badge)](LICENSE)
 
 <p><i>Point it at a target. It does the rest.</i></p>
 
@@ -249,7 +249,7 @@ Works with any OpenAI-compatible chat completions API:
 
 ## License
 
-Private — not for redistribution.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
