@@ -27,6 +27,7 @@ func main() {
 		cmd := exec.Command("go", "install", "github.com/xalgord/xalgorix/cmd/xalgorix@latest")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		cmd.Env = append(os.Environ(), "GOPROXY=direct")
 		if err := cmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 			os.Exit(1)
