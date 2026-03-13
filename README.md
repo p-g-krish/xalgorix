@@ -30,9 +30,16 @@ Xalgorix is a fully autonomous AI pentesting agent that uses LLMs to drive compr
 - **Scan Modes** — Single site or wildcard (subdomain enumeration) scanning
 - **Multi-Target Queue** — Upload a targets file for sequential auto-scanning
 - **Vulnerability Reporting** — Structured JSON reports with CVSS scores, PoC scripts, and remediation steps
+- **PDF Pentest Reports** — Professional PDF reports auto-generated on scan completion
+- **Safety Guardrails** — Destructive commands (rm -rf, DROP TABLE, DELETE, etc.) are blocked at the terminal level
+- **Zero False Positives** — Agent manually verifies every finding before reporting
 - **Multi-Agent Support** — Spawn sub-agents for parallelized task delegation
 - **Browser Automation** — Headless Chromium via go-rod for dynamic page testing
 - **Real-Time Token Counter** — Tracks LLM token usage (K/M format) across iterations
+- **Config File Support** — `~/.xalgorix.env` auto-loaded, works with `sudo`
+- **Self-Update** — `xalgorix -up` updates to the latest version
+- **Daemon Mode** — `xalgorix --web -d` runs in background
+- **Mobile Responsive** — Web UI works on tablet and phone screens
 - **11 Built-in Tools** — Terminal, Python, browser, file editor, web search, HTTP proxy, Notes, and more
 
 ## Architecture
@@ -218,6 +225,30 @@ All scan data is stored in `~/xalgorix-data/scans/` with per-target directories:
 - **Auto-cleanup:** Scans older than 30 days are automatically deleted on server startup
 - **Page refresh safe:** Last scan is restored on page load via `/api/scans/latest`
 - **Scan history API:** `GET /api/scans` returns all saved scans (newest first)
+
+## Safety Guardrails
+
+Xalgorix is designed to **test and report**, never **modify or destroy**.
+
+### Blocked Commands (hard-blocked at terminal level)
+
+| Category | Blocked Patterns |
+|---|---|
+| **Filesystem** | `rm -rf /`, `rm -rf ~`, `rm -rf .`, `mkfs`, `dd if=`, `> /dev/sd` |
+| **SQL** | `DROP TABLE`, `DROP DATABASE`, `DELETE FROM`, `TRUNCATE TABLE`, `UPDATE` |
+| **System** | `shutdown`, `reboot`, `halt`, `poweroff`, `init 0`, `init 6`, fork bombs |
+| **Code** | `shutil.rmtree`, `os.remove` |
+| **Permissions** | `chmod 777 /`, `chown -R` |
+
+If the agent attempts any of these, the command is **rejected before execution** with:
+```
+[BLOCKED] Destructive command rejected: SQL DROP TABLE. Xalgorix is read-only.
+```
+
+### Agent Safety Rules
+- Uses `SELECT` to verify SQL injection — never `DROP`/`DELETE`/`UPDATE`
+- Uses safe payloads: time-based blind SQLi, reflected XSS, SSRF with callbacks
+- Every vulnerability is **manually verified** before reporting — zero false positives
 
 ## Built-in Tools
 
