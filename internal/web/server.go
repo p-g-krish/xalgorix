@@ -105,6 +105,7 @@ type Server struct {
 	dataDir        string
 	currentScanDir string
 	discordWebhook string
+	liveScanRecord *ScanRecord
 }
 
 // NewServer creates a new web server.
@@ -445,6 +446,7 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 	}
 
 	// Save initial scan record
+	s.liveScanRecord = &scanRecord
 	s.saveScanRecord(&scanRecord)
 
 	done := make(chan struct{})
@@ -572,6 +574,7 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 	}
 
 	s.saveScanRecord(&scanRecord)
+	s.liveScanRecord = nil
 
 	// Generate PDF report
 	reportPath, err := s.generateReport(&scanRecord)
@@ -735,6 +738,16 @@ func (s *Server) handleGetScan(w http.ResponseWriter, r *http.Request) {
 			return dirs[i].modTime.Before(dirs[j].modTime)
 		})
 		scanID = dirs[len(dirs)-1].name
+	}
+
+	// If this is the currently running scan, return live in-memory data
+	s.mu.RLock()
+	live := s.liveScanRecord
+	s.mu.RUnlock()
+	if live != nil && live.ID == scanID {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(live)
+		return
 	}
 
 	scanPath := filepath.Join(s.dataDir, scanID, "scan.json")
