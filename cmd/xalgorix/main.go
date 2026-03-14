@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -15,7 +16,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.6.9"
+const version = "0.7.0"
 
 func main() {
 	args := parseArgs()
@@ -115,16 +116,26 @@ func main() {
 			os.Exit(1)
 		}
 		
-		// Make executable and copy to /usr/local/bin
+		// Make executable and copy to GOPATH bin
 		os.Chmod(tmpFile.Name(), 0755)
 		
-		// Use sudo to copy
-		cmd := exec.Command("sudo", "cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+		// Determine install path - use GOPATH if available
+		goPath := os.Getenv("GOPATH")
+		if goPath == "" {
+			goPath = filepath.Join(os.Getenv("HOME"), "go")
+		}
+		installPath := filepath.Join(goPath, "bin", "xalgorix")
+		
+		// Create bin directory if needed
+		os.MkdirAll(filepath.Join(goPath, "bin"), 0755)
+		
+		// Use sudo to copy if needed
+		cmd := exec.Command("sudo", "cp", tmpFile.Name(), installPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			// Try without sudo
-			cmd = exec.Command("cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+			cmd = exec.Command("cp", tmpFile.Name(), installPath)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
@@ -133,10 +144,17 @@ func main() {
 			}
 		}
 		
+		// Ensure it's in PATH - create symlink if needed
+		symlinkPath := "/usr/local/bin/xalgorix"
+		if _, err := os.Lstat(symlinkPath); err == nil {
+			os.Remove(symlinkPath)
+		}
+		os.Symlink(installPath, symlinkPath)
+		
 		fmt.Println("✅ Updated successfully!")
 		
 		// Show the new version
-		verCmd := exec.Command("/usr/local/bin/xalgorix", "--version")
+		verCmd := exec.Command(installPath, "--version")
 		verCmd.Stdout = os.Stdout
 		verCmd.Stderr = os.Stderr
 		verCmd.Run()
