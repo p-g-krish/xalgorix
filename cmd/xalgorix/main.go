@@ -313,15 +313,6 @@ func printUsage() {
 
 // handleStart installs and starts xalgorix as a systemd service
 func handleStart() {
-	// Check if already running
-	cmd := exec.Command("systemctl", "is-active", "xalgorix")
-	output, _ := cmd.Output()
-	if strings.TrimSpace(string(output)) == "active" {
-		fmt.Println("⚠️  Xalgorix service is already running!")
-		fmt.Println("   Use: xalgorix --restart to restart it")
-		os.Exit(1)
-	}
-
 	// Check if binary exists
 	if _, err := os.Stat("/usr/local/bin/xalgorix"); os.IsNotExist(err) {
 		fmt.Println("❌ Xalgorix not found at /usr/local/bin/xalgorix")
@@ -349,18 +340,26 @@ Environment=XALGORIX_API_BASE=${XALGORIX_API_BASE}
 [Install]
 WantedBy=multi-user.target
 `
-	// Write service file
+	// Try to write service file (requires sudo)
 	servicePath := "/etc/systemd/system/xalgorix.service"
 	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)
+	
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to create service file: %v\n", err)
-		fmt.Println("   Trying to start without systemd...")
-		// Fallback: just start in background
-		startBackground()
-		return
+		// Try with sudo
+		cmd := exec.Command("sudo", "tee", servicePath)
+		cmd.Stdin = strings.NewReader(serviceContent)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to create service file (need sudo): %v\n", err)
+			fmt.Println("   Trying to start in background mode...")
+			startBackground()
+			return
+		}
 	}
 
 	// Reload systemd and enable service
+	var cmd *exec.Cmd
 	cmd = exec.Command("systemctl", "daemon-reload")
 	cmd.Run()
 
@@ -407,13 +406,13 @@ func startBackground() {
 
 // handleStop stops the xalgorix service
 func handleStop() {
-	// Try systemctl first
-	cmd := exec.Command("systemctl", "stop", "xalgorix")
+	// Try systemctl first (with sudo)
+	cmd := exec.Command("sudo", "systemctl", "stop", "xalgorix")
 	err := cmd.Run()
 	
 	if err != nil {
 		// Fallback: pkill
-		cmd = exec.Command("pkill", "-f", "xalgorix.*--web")
+		cmd = exec.Command("pkill", "-f", "xalgorix")
 		cmd.Run()
 	}
 	
@@ -422,8 +421,8 @@ func handleStop() {
 
 // handleRestart restarts the xalgorix service
 func handleRestart() {
-	// Try systemctl first
-	cmd := exec.Command("systemctl", "restart", "xalgorix")
+	// Try systemctl first (with sudo)
+	cmd := exec.Command("sudo", "systemctl", "restart", "xalgorix")
 	err := cmd.Run()
 	
 	if err != nil {
