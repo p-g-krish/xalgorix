@@ -528,7 +528,7 @@ https://github.com/xalgord/xalgorix`
 
 	// Save PDF
 	filename := fmt.Sprintf("xalgorix_report_%s.pdf", scan.ID)
-	outPath := filepath.Join(s.dataDir, "scans", scan.ID, filename)
+	outPath := filepath.Join(s.dataDir, scan.ID, filename)
 	err := pdf.OutputFileAndClose(outPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate PDF: %w", err)

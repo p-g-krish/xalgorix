@@ -135,7 +135,6 @@ type ScanRequest struct {
 	APIBase        string   `json:"api_base"`         // provider API base URL
 	DiscordWebhook string   `json:"discord_webhook"` // Discord webhook URL
 	SeverityFilter []string `json:"severity_filter"` // e.g. ["critical", "high"]
-	OutOfScope     string   `json:"out_of_scope"`    // Out of scope items
 }
 
 // WSEvent is a WebSocket message sent to clients.
@@ -755,12 +754,6 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 		severityText += "Focus ONLY on: " + strings.Join(severities, ", ") + "."
 		instruction = severityText + "\n\n" + instruction
 	}
-	
-	// Add out of scope to instruction if specified
-	if req.OutOfScope != "" {
-		outOfScopeText := "\n\nOUT OF SCOPE: The following are strictly OUT OF SCOPE for this test:\n" + req.OutOfScope + "\nDo NOT test, enumerate, or access any of these targets."
-		instruction = instruction + outOfScopeText
-	}
 
 	s.agent.Run(targets, instruction)
 	close(events)
@@ -783,8 +776,12 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 	reportPath, err := s.generateReport(&scanRecord)
 	if err != nil {
 		log.Printf("Failed to generate PDF report: %v", err)
+		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s (PDF generation failed)", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST")))
 	} else {
 		log.Printf("PDF report saved: %s", reportPath)
+		// Send Discord with PDF
+		desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST"))
+		s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
 		// Notify via WebSocket that report is ready
 		s.broadcast(WSEvent{
 			Type:    "report_ready",
@@ -898,12 +895,13 @@ func (s *Server) handleDownloadReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var rec ScanRecord
-		if json.Unmarshal(data, &rec) != nil {
+		if err := json.Unmarshal(data, &rec); err != nil {
 			http.Error(w, "invalid scan data", http.StatusInternalServerError)
 			return
 		}
 		if _, err := s.generateReport(&rec); err != nil {
-			http.Error(w, "failed to generate report", http.StatusInternalServerError)
+			log.Printf("Report generation error: %v", err)
+			http.Error(w, "failed to generate report: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
