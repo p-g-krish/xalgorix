@@ -78,6 +78,30 @@
             </label>
           </div>
           
+          <div class="input-row severity-row">
+            <span class="severity-label">🎯 Severity Filter:</span>
+            <label class="severity-checkbox critical">
+              <input type="checkbox" id="sev-critical" value="critical" checked>
+              <span>Critical</span>
+            </label>
+            <label class="severity-checkbox high">
+              <input type="checkbox" id="sev-high" value="high" checked>
+              <span>High</span>
+            </label>
+            <label class="severity-checkbox medium">
+              <input type="checkbox" id="sev-medium" value="medium" checked>
+              <span>Medium</span>
+            </label>
+            <label class="severity-checkbox low">
+              <input type="checkbox" id="sev-low" value="low">
+              <span>Low</span>
+            </label>
+            <label class="severity-checkbox info">
+              <input type="checkbox" id="sev-info" value="info">
+              <span>Info</span>
+            </label>
+          </div>
+          
           <div class="input-row">
             <textarea id="instruction-input" class="input-field input-textarea" placeholder="Custom instructions (optional) — or upload a file"></textarea>
             <label class="file-btn" title="Upload instructions file">
@@ -108,16 +132,16 @@
           <details class="settings-toggle" id="notif-settings">
             <summary>🔔 Discord Notifications</summary>
             <div class="settings-panel" id="notif-settings-panel">
-              <input type="text" id="discord-webhook" class="input-field" style="grid-column: span 4" placeholder="Discord Webhook URL">
+              <input type="text" id="discord-webhook" class="input-field" style="width: 100%;" placeholder="Discord Webhook URL">
             </div>
           </details>
           
           <details class="settings-toggle" id="rate-settings">
             <summary>⚡ Rate Limiting</summary>
-            <div class="settings-panel" id="rate-settings-panel" style="grid-template-columns: 1fr 1fr 1fr;">
-              <input type="number" id="rate-limit-requests" class="input-field" placeholder="Requests (1-1000)" min="1" max="1000" style="grid-column: 1;">
-              <input type="number" id="rate-limit-window" class="input-field" placeholder="Window (10-3600s)" min="10" max="3600" style="grid-column: 2;">
-              <button class="btn btn-secondary" onclick="saveRateLimit()" style="grid-column: 3; padding: 12px;">💾 Save</button>
+            <div class="settings-panel" style="grid-template-columns: 1fr 1fr 120px;">
+              <input type="number" id="rate-limit-requests" class="input-field" placeholder="Requests (1-1000)" min="1" max="1000">
+              <input type="number" id="rate-limit-window" class="input-field" placeholder="Window (10-3600s)" min="10" max="3600">
+              <button class="btn btn-secondary" onclick="saveRateLimit()">💾 Save</button>
               <div id="rate-limit-status" style="grid-column: 1 / -1; font-size: 11px; color: var(--success); text-align: center; margin-top: 4px;"></div>
             </div>
           </details>

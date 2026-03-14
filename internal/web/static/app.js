@@ -596,6 +596,14 @@
         const instruction = document.getElementById('instruction-input').value.trim();
         const scanMode = document.getElementById('scan-mode').value;
 
+        // Get severity filter
+        const severityFilter = [];
+        if (document.getElementById('sev-critical').checked) severityFilter.push('critical');
+        if (document.getElementById('sev-high').checked) severityFilter.push('high');
+        if (document.getElementById('sev-medium').checked) severityFilter.push('medium');
+        if (document.getElementById('sev-low').checked) severityFilter.push('low');
+        if (document.getElementById('sev-info').checked) severityFilter.push('info');
+        
         // Parse targets
         let targets;
         if (loadedTargets.length > 0) {
@@ -626,7 +634,7 @@
         setStatus('running', 'SCANNING');
         startTimer();
 
-        const payload = { targets, instruction, scan_mode: scanMode };
+        const payload = { targets, instruction, scan_mode: scanMode, severity_filter: severityFilter };
 
         // Include LLM provider settings
         const provider = document.getElementById('llm-provider').value;
@@ -841,9 +849,31 @@
         }
     }
 
+    // Initialize severity checkbox handlers
+    function initSeverityCheckboxes() {
+        const checkboxes = ['sev-critical', 'sev-high', 'sev-medium', 'sev-low', 'sev-info'];
+        checkboxes.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                const label = el.closest('.severity-checkbox');
+                if (el.checked) {
+                    label.classList.add('checked');
+                }
+                el.addEventListener('change', function() {
+                    if (this.checked) {
+                        label.classList.add('checked');
+                    } else {
+                        label.classList.remove('checked');
+                    }
+                });
+            }
+        });
+    }
+
     // Initialize
     window.onProviderChange();
     loadRateLimitSettings();
+    initSeverityCheckboxes();
     connect();
     
     // Check server status

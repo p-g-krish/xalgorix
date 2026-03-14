@@ -300,24 +300,36 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 24px;
   margin-bottom: 20px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .input-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
 }
 
 .input-row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.input-row > * {
+  flex-grow: 1;
+  flex-shrink: 1;
 }
 
 .input-field {
-  flex: 1;
-  padding: 14px 16px;
+  flex: 1 1 auto;
+  min-width: 200px;
+  padding: 16px 18px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -326,6 +338,17 @@ body {
   font-size: 14px;
   outline: none;
   transition: all 0.2s ease;
+  width: calc(100% - 60px);
+  box-sizing: border-box;
+}
+
+.input-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  flex: 1 1 auto;
+  min-width: 200px;
 }
 
 .input-field:focus {
@@ -338,18 +361,46 @@ body {
 }
 
 .input-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2300ff88' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+  appearance: menulist;
+  background-image: none;
   background-repeat: no-repeat;
-  background-position: right 14px center;
-  padding-right: 40px;
-  flex: 0 0 220px;
+  padding-right: 16px;
+  flex: 0 0 280px;
+  min-width: 280px;
+  width: 280px;
   cursor: pointer;
+  box-sizing: border-box;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 16px 18px;
+  transition: all 0.2s ease;
+  outline: none;
+  line-height: 1.4;
+  height: auto;
+  -webkit-transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-select:hover {
+  border-color: var(--accent-primary);
+}
+
+.input-select:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .input-select option {
   background: var(--bg-secondary);
   color: var(--text-primary);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 
 .input-textarea {
@@ -423,7 +474,7 @@ body {
 }
 
 /* ── LLM Settings ─────────────────────────────────────── */
-.settings-toggle {
+details.settings-toggle {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
@@ -436,29 +487,60 @@ body {
   transition: color 0.2s;
 }
 
-.settings-toggle:hover {
+details.settings-toggle:hover {
   color: var(--accent-primary);
 }
 
-.settings-toggle::before {
+details.settings-toggle summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+details.settings-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+details.settings-toggle summary::before {
   content: '▶';
   font-size: 8px;
   transition: transform 0.2s;
 }
 
-.settings-toggle[open]::before {
+details.settings-toggle[open] summary::before {
   transform: rotate(90deg);
+}
+
+details.settings-toggle[open] .settings-panel {
+  display: grid;
 }
 
 .settings-panel {
   display: none;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  padding: 16px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 18px;
   margin-top: 8px;
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 100%;
   animation: slideDown 0.2s ease;
+}
+
+.settings-panel .input-field {
+  width: 100%;
+  min-width: 100%;
+}
+
+#discord-webhook {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+  min-width: 100%;
 }
 
 .settings-panel:not([hidden]) {
@@ -535,6 +617,26 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+}
+
+/* ── Custom Scrollbar ───────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-card-hover);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
 }
 
 .feed-body::-webkit-scrollbar {
@@ -1219,4 +1321,142 @@ body {
 .gap-2 { gap: 8px; }
 .gap-4 { gap: 16px; }
 .mt-4 { margin-top: 16px; }
-.mb-4 { margin-bottom: 16px; }
+.mb-4 { margin-top: 16px; }
+
+/* ── Rate Limit Settings ───────────────────────────────── */
+#rate-settings-panel {
+  gap: 12px !important;
+}
+
+#rate-limit-requests,
+#rate-limit-window {
+  padding: 14px 16px !important;
+  font-size: 14px !important;
+  text-align: center;
+}
+
+#rate-limit-requests::-webkit-input-placeholder,
+#rate-limit-window::-webkit-input-placeholder {
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+}
+
+#rate-limit-requests::-moz-placeholder,
+#rate-limit-window::-moz-placeholder {
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+}
+
+#rate-limit-requests::placeholder,
+#rate-limit-window::placeholder {
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+}
+
+/* ── Severity Filter ─────────────────────────────────────── */
+.severity-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+}
+
+.severity-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 8px;
+}
+
+.severity-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  border: 1px solid var(--border);
+  opacity: 0.5;
+}
+
+.severity-checkbox.checked {
+  opacity: 1;
+}
+
+.severity-checkbox:hover {
+  opacity: 0.8;
+}
+
+.severity-checkbox.checked:hover {
+  opacity: 1;
+}
+
+.severity-checkbox input {
+  display: none;
+}
+
+.severity-checkbox span {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.severity-checkbox.checked span {
+  color: var(--text-primary);
+}
+
+.severity-checkbox.critical {
+  background: rgba(255, 71, 87, 0.1);
+  border-color: rgba(255, 71, 87, 0.3);
+}
+
+.severity-checkbox.critical input:checked + span {
+  color: #ff4757;
+}
+
+.severity-checkbox.high {
+  background: rgba(255, 127, 80, 0.1);
+  border-color: rgba(255, 127, 80, 0.3);
+}
+
+.severity-checkbox.high input:checked + span {
+  color: #ff7f50;
+}
+
+.severity-checkbox.medium {
+  background: rgba(255, 165, 2, 0.1);
+  border-color: rgba(255, 165, 2, 0.3);
+}
+
+.severity-checkbox.medium input:checked + span {
+  color: #ffa502;
+}
+
+.severity-checkbox.low {
+  background: rgba(46, 213, 115, 0.1);
+  border-color: rgba(46, 213, 115, 0.3);
+}
+
+.severity-checkbox.low input:checked + span {
+  color: #2ed573;
+}
+
+.severity-checkbox.info {
+  background: rgba(52, 152, 219, 0.1);
+  border-color: rgba(52, 152, 219, 0.3);
+}
+
+.severity-checkbox.info input:checked + span {
+  color: #3498db;
+}
+
+.severity-checkbox:has(input:checked) {
+  background-opacity: 0.2;
+}
+
+.severity-checkbox:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}

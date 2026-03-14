@@ -371,6 +371,149 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 		}
 	}
 
+	// ─── TESTED ENDPOINTS ─────────────────────────────────
+	pdf.AddPage()
+	drawRect(0, 0, 210, 297, darkBg)
+	drawRect(0, 0, 210, 1.5, green)
+
+	pdf.SetY(15)
+	pdf.SetFont("Helvetica", "B", 22)
+	setColor(green)
+	pdf.CellFormat(190, 12, "Tested Endpoints & URLs", "", 1, "L", false, 0, "")
+	drawRect(10, pdf.GetY()+2, 50, 0.8, green)
+	pdf.Ln(8)
+
+	// Extract unique endpoints from events
+	endpointSet := make(map[string]bool)
+	var endpoints []string
+	for _, evt := range scan.Events {
+		if evt.Type == "tool_call" && evt.ToolName == "terminal_execute" {
+			// Try to extract URLs from commands
+			if strings.Contains(evt.ToolArgs["command"], "http") {
+				lines := strings.Split(evt.ToolArgs["command"], "\n")
+				for _, line := range lines {
+					if strings.Contains(line, "http://") || strings.Contains(line, "https://") {
+						// Extract URL
+						for _, word := range strings.Fields(line) {
+							if strings.Contains(word, "http") {
+								u := extractURL(word)
+								if u != "" && !endpointSet[u] {
+									endpointSet[u] = true
+									endpoints = append(endpoints, u)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(endpoints) > 0 {
+		pdf.SetFont("Helvetica", "", 9)
+		setColor(white)
+		// Show first 50 endpoints
+		displayEndpoints := endpoints
+		if len(displayEndpoints) > 50 {
+			displayEndpoints = displayEndpoints[:50]
+		}
+		for _, ep := range displayEndpoints {
+			if pdf.GetY() > 265 {
+				pdf.AddPage()
+				drawRect(0, 0, 210, 297, darkBg)
+				drawRect(0, 0, 210, 1.5, green)
+				pdf.SetY(15)
+			}
+			pdf.SetFont("Courier", "", 8)
+			setColor(cyan)
+			pdf.CellFormat(190, 5, "• "+ep, "", 1, "L", false, 0, "")
+		}
+		if len(endpoints) > 50 {
+			pdf.Ln(2)
+			pdf.SetFont("Helvetica", "", 9)
+			setColor(gray)
+			pdf.CellFormat(190, 5, fmt.Sprintf("... and %d more endpoints", len(endpoints)-50), "", 1, "L", false, 0, "")
+		}
+	} else {
+		pdf.SetFont("Helvetica", "", 10)
+		setColor(gray)
+		pdf.CellFormat(190, 8, "No specific endpoints extracted from scan.", "", 1, "L", false, 0, "")
+	}
+
+	// ─── METHODOLOGY ──────────────────────────────────────
+	pdf.AddPage()
+	drawRect(0, 0, 210, 297, darkBg)
+	drawRect(0, 0, 210, 1.5, green)
+
+	pdf.SetY(15)
+	pdf.SetFont("Helvetica", "B", 22)
+	setColor(green)
+	pdf.CellFormat(190, 12, "Methodology Applied", "", 1, "L", false, 0, "")
+	drawRect(10, pdf.GetY()+2, 50, 0.8, green)
+	pdf.Ln(10)
+
+	methodologies := []string{
+		"1. Information Gathering & Reconnaissance",
+		"2. Subdomain Enumeration & Asset Discovery",
+		"3. Port Scanning & Service Identification",
+		"4. Technology Fingerprinting",
+		"5. Directory & File Enumeration",
+		"6. Vulnerability Scanning (Automated + Manual)",
+		"7. SSL/TLS Security Assessment",
+		"8. Authentication & Authorization Testing",
+		"9. Injection Testing (SQLi, XSS, Command Injection, etc.)",
+		"10. Business Logic Testing",
+		"11. API Security Testing",
+		"12. Manual Verification of Findings",
+	}
+
+	pdf.SetFont("Helvetica", "", 11)
+	for _, m := range methodologies {
+		if pdf.GetY() > 260 {
+			pdf.AddPage()
+			drawRect(0, 0, 210, 297, darkBg)
+			drawRect(0, 0, 210, 1.5, green)
+			pdf.SetY(15)
+		}
+		setColor(white)
+		pdf.CellFormat(190, 8, m, "", 1, "L", false, 0, "")
+	}
+
+	// ─── DISCLAIMER ──────────────────────────────────────
+	pdf.AddPage()
+	drawRect(0, 0, 210, 297, darkBg)
+	drawRect(0, 0, 210, 1.5, green)
+
+	pdf.SetY(15)
+	pdf.SetFont("Helvetica", "B", 22)
+	setColor(red)
+	pdf.CellFormat(190, 12, "Disclaimer", "", 1, "L", false, 0, "")
+	drawRect(10, pdf.GetY()+2, 50, 0.8, red)
+	pdf.Ln(10)
+
+	disclaimer := `This penetration test was conducted by Xalgorix, an autonomous AI-powered security assessment tool. The findings in this report are based on automated testing and manual verification where possible.
+
+IMPORTANT NOTICES:
+
+• Scope: This assessment was limited to the target systems explicitly listed in this report. Any systems or services outside the defined scope were not tested.
+
+• False Positives: While Xalgorix attempts to verify findings before reporting, some findings may require manual validation. We recommend validating all critical and high-severity findings before taking remediation actions.
+
+• Limitations: Automated testing cannot discover all vulnerabilities. Manual testing, code review, and other complementary security activities are recommended for comprehensive security coverage.
+
+• Legal: This assessment was conducted with authorization from the target owner. Unauthorized security testing is illegal. Ensure you have proper authorization before testing any system.
+
+• Report Accuracy: This report is provided "as is" without warranties of any kind. The testing methodology and findings are based on the tools and techniques available at the time of testing.
+
+• Remediation: For any vulnerabilities found, follow industry best practices for remediation. Consult with security professionals for complex vulnerabilities.
+
+Generated by Xalgorix - Autonomous AI Pentesting Engine
+https://github.com/xalgord/xalgorix`
+
+	pdf.SetFont("Helvetica", "", 9)
+	setColor(white)
+	pdf.MultiCell(182, 5, disclaimer, "", "L", false)
+
 	// ─── FOOTER ON ALL PAGES ───────────────────────────────
 	totalPages := pdf.PageCount()
 	for i := 1; i <= totalPages; i++ {
@@ -392,4 +535,27 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	}
 
 	return outPath, nil
+}
+
+// extractURL extracts a clean URL from a string
+func extractURL(s string) string {
+	// Find the start of URL
+	start := strings.Index(s, "http")
+	if start == -1 {
+		return ""
+	}
+	// Find the end of URL (space, quote, or common delimiters)
+	end := len(s)
+	delimiters := []string{" ", "\"", "'", ">", "<", "|", "\n", "\r", "&", "?"}
+	for _, d := range delimiters {
+		if idx := strings.Index(s[start:], d); idx != -1 && start+idx < end {
+			end = start + idx
+		}
+	}
+	// Trim and return
+	url := s[start:end]
+	url = strings.TrimSpace(url)
+	// Remove trailing punctuation
+	url = strings.TrimRight(url, ".,;:!)]}>")
+	return url
 }

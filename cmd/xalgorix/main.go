@@ -12,10 +12,28 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.1.0"
+const version = "0.4.0"
 
 func main() {
 	args := parseArgs()
+
+	// Handle start command
+	if args.start {
+		handleStart()
+		os.Exit(0)
+	}
+
+	// Handle stop command
+	if args.stop {
+		handleStop()
+		os.Exit(0)
+	}
+
+	// Handle uninstall command
+	if args.uninstall {
+		handleUninstall()
+		os.Exit(0)
+	}
 
 	if args.version {
 		fmt.Printf("xalgorix v%s\n", version)
@@ -130,6 +148,9 @@ type cliArgs struct {
 	daemon      bool
 	webUI       bool
 	port        int
+	start       bool
+	stop        bool
+	uninstall   bool
 }
 
 func parseArgs() cliArgs {
@@ -166,6 +187,12 @@ func parseArgs() cliArgs {
 			args.daemon = true
 		case "--version", "-v":
 			args.version = true
+		case "--start":
+			args.start = true
+		case "--stop":
+			args.stop = true
+		case "--uninstall":
+			args.uninstall = true
 		case "--help", "-h":
 			printUsage()
 			os.Exit(0)
@@ -206,6 +233,9 @@ func printUsage() {
 	fmt.Println("  -m, --model <name>        LLM model (overrides XALGORIX_LLM)")
 	fmt.Println("  -v, --version             Show version")
 	fmt.Println("  -up, --update             Update to latest version")
+	fmt.Println("  --start                  Start as background service")
+	fmt.Println("  --stop                   Stop running service")
+	fmt.Println("  --uninstall              Uninstall from system")
 	fmt.Println("  -h, --help                Show help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -214,10 +244,113 @@ func printUsage() {
 	fmt.Println("  xalgorix --target https://example.com")
 	fmt.Println("  xalgorix --target https://example.com --instruction \"Focus on auth\"")
 	fmt.Println()
+	fmt.Println("Service Commands:")
+	fmt.Println("  xalgorix --start      Start Web UI in background")
+	fmt.Println("  xalgorix --stop       Stop running Web UI")
+	fmt.Println("  xalgorix --uninstall  Remove xalgorix from system")
+	fmt.Println()
 	fmt.Println("Environment:")
 	fmt.Println("  XALGORIX_LLM              Model name (e.g. minimax/MiniMax-M2.5)")
 	fmt.Println("  XALGORIX_API_KEY           API key")
 	fmt.Println("  XALGORIX_API_BASE          API base URL")
 	fmt.Println("  XALGORIX_MAX_ITERATIONS    Max iterations (0 = unlimited)")
 	fmt.Println()
+}
+
+// handleStart starts xalgorix as a background service
+func handleStart() {
+	// Check if already running
+	cmd := exec.Command("pgrep", "-f", "xalgorix.*--web")
+	output, _ := cmd.Output()
+	if len(output) > 0 {
+		fmt.Println("⚠️  Xalgorix is already running!")
+		fmt.Println("   Use: xalgorix --stop to stop it first")
+		os.Exit(1)
+	}
+
+	// Check if binary exists
+	if _, err := os.Stat("/usr/local/bin/xalgorix"); os.IsNotExist(err) {
+		fmt.Println("❌ Xalgorix not found at /usr/local/bin/xalgorix")
+		fmt.Println("   Install with: go install or ./build.sh --install")
+		os.Exit(1)
+	}
+
+	// Load env file
+	cfg := config.Get()
+
+	// Validate config
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Configuration error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "\nSet your model:\n")
+		fmt.Fprintf(os.Stderr, "   nano ~/.xalgorix.env\n")
+		fmt.Fprintf(os.Stderr, "   XALGORIX_LLM=minimax/MiniMax-M2.5\n")
+		fmt.Fprintf(os.Stderr, "   XALGORIX_API_KEY=your_key_here\n")
+		os.Exit(1)
+	}
+
+	// Start in background
+	logFile, err := os.OpenFile("/tmp/xalgorix.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to open log file: %v\n", err)
+		os.Exit(1)
+	}
+
+	startCmd := exec.Command("/usr/local/bin/xalgorix", "--web", "--daemon")
+	startCmd.Stdout = logFile
+	startCmd.Stderr = logFile
+
+	if err := startCmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to start xalgorix: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("✅ Xalgorix started successfully!")
+	fmt.Println("   Web UI: http://localhost:1337")
+	fmt.Println("   Logs:   tail -f /tmp/xalgorix.log")
+}
+
+// handleStop stops the running xalgorix service
+func handleStop() {
+	// Find and kill xalgorix processes
+	cmd := exec.Command("pkill", "-f", "xalgorix.*--web")
+	err := cmd.Run()
+	
+	if err != nil {
+		fmt.Println("⚠️  No running xalgorix process found")
+	} else {
+		fmt.Println("✅ Xalgorix stopped successfully!")
+	}
+}
+
+// handleUninstall removes xalgorix from the system
+func handleUninstall() {
+	fmt.Println("🗑️  Uninstalling Xalgorix...")
+	
+	// Stop the service first
+	cmd := exec.Command("pkill", "-f", "xalgorix")
+	cmd.Run()
+	
+	// Remove binary
+	if _, err := os.Stat("/usr/local/bin/xalgorix"); err == nil {
+		rmCmd := exec.Command("sudo", "rm", "/usr/local/bin/xalgorix")
+		rmCmd.Stdout = os.Stdout
+		rmCmd.Stderr = os.Stderr
+		if err := rmCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to remove binary: %v\n", err)
+		} else {
+			fmt.Println("✅ Removed /usr/local/bin/xalgorix")
+		}
+	}
+	
+	// Ask about data removal
+	fmt.Println()
+	fmt.Println("📁 Data directories (not removed automatically):")
+	fmt.Println("   ~/.xalgorix/         - Configuration & skills")
+	fmt.Println("   ~/xalgorix-data/    - Scan data & reports")
+	fmt.Println()
+	fmt.Println("To remove data manually:")
+	fmt.Println("   rm -rf ~/.xalgorix ~/xalgorix-data")
+	
+	fmt.Println()
+	fmt.Println("✅ Uninstall complete!")
 }

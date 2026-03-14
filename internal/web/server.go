@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -133,6 +134,7 @@ type ScanRequest struct {
 	APIKey         string   `json:"api_key"`          // provider API key
 	APIBase        string   `json:"api_base"`         // provider API base URL
 	DiscordWebhook string   `json:"discord_webhook"` // Discord webhook URL
+	SeverityFilter []string `json:"severity_filter"` // e.g. ["critical", "high"]
 }
 
 // WSEvent is a WebSocket message sent to clients.
@@ -561,7 +563,7 @@ func (s *Server) runMultiScan(req ScanRequest) {
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan([]string{target}, instruction)
+		s.runSingleScan([]string{target}, instruction, req.SeverityFilter)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -576,9 +578,27 @@ func (s *Server) runMultiScan(req ScanRequest) {
 	s.clearQueueState()
 	s.running = false
 
-	// Discord: scan finished
+	// Discord: scan finished with PDF
 	vulns := reporting.GetVulnerabilities()
-	s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST")))
+	
+	// Generate PDF report
+	reportPath := ""
+	if s.liveScanRecord != nil {
+		s.liveScanRecord.Status = "finished"
+		s.liveScanRecord.FinishedAt = time.Now().Format(time.RFC3339)
+		s.liveScanRecord.Vulns = vulnSummaries(vulns)
+		if p, err := s.generateReport(s.liveScanRecord); err == nil {
+			reportPath = p
+		}
+	}
+	
+	// Send Discord with PDF
+	desc := fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST"))
+	if reportPath != "" {
+		s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
+	} else {
+		s.sendDiscord(0x3b82f6, "✅ Scan Finished", desc)
+	}
 
 	s.broadcast(WSEvent{
 		Type:    "queue_finished",
@@ -586,7 +606,7 @@ func (s *Server) runMultiScan(req ScanRequest) {
 	})
 }
 
-func (s *Server) runSingleScan(targets []string, instruction string) {
+func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string) {
 	// Reset global state from previous scans
 	reporting.ResetVulnerabilities()
 	notes.ResetNotes()
@@ -718,6 +738,14 @@ func (s *Server) runSingleScan(targets []string, instruction string) {
 		}
 	}()
 
+	// Add severity filter to instruction if specified
+	if len(severityFilter) > 0 {
+		severityText := "IMPORTANT: Only test for " + strings.Join(severityFilter, ", ") + " severity vulnerabilities. "
+		severityText += "Do NOT report low or informational findings. "
+		severityText += "Focus your testing on " + strings.Join(severityFilter, ", ") + " severity issues only."
+		instruction = severityText + "\n\n" + instruction
+	}
+
 	s.agent.Run(targets, instruction)
 	close(events)
 	<-done
@@ -766,6 +794,15 @@ func vulnToSummary(v reporting.Vulnerability) VulnSummary {
 		PoCScript:         v.PoCScript,
 		Remediation:       v.Remediation,
 	}
+}
+
+// vulnSummaries converts a slice of vulnerabilities to VulnSummary
+func vulnSummaries(vulns []reporting.Vulnerability) []VulnSummary {
+	result := make([]VulnSummary, len(vulns))
+	for i, v := range vulns {
+		result[i] = vulnToSummary(v)
+	}
+	return result
 }
 
 func (s *Server) saveScanRecord(rec *ScanRecord) {
@@ -1052,10 +1089,76 @@ func (s *Server) broadcast(evt WSEvent) {
 
 // sendDiscord sends a rich embed message to the configured Discord webhook.
 func (s *Server) sendDiscord(color int, title, description string) {
+	s.sendDiscordWithFile(color, title, description, "")
+}
+
+// sendDiscordWithFile sends a rich embed message with an optional file attachment to Discord.
+func (s *Server) sendDiscordWithFile(color int, title, description, filePath string) {
 	if s.discordWebhook == "" {
 		return
 	}
 
+	// If no file, send simple embed
+	if filePath == "" {
+		s.sendSimpleEmbed(color, title, description)
+		return
+	}
+
+	// Check if file exists
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Failed to read PDF for Discord: %v", err)
+		// Send embed without file
+		s.sendSimpleEmbed(color, title, description+" (PDF generation failed)")
+		return
+	}
+
+	// Create multipart form data
+	var b bytes.Buffer
+	writer := multipart.NewWriter(&b)
+
+	// Add payload JSON
+	embedPayload := map[string]any{
+		"username":   "Xalgorix",
+		"avatar_url": "https://raw.githubusercontent.com/xalgord/xalgord/main/assets/logo.png",
+		"embeds": []map[string]any{
+			{
+				"title":       title,
+				"description": description,
+				"color":       color,
+				"timestamp":   time.Now().Format(time.RFC3339),
+				"footer": map[string]string{
+					"text": "Xalgorix — Autonomous AI Pentesting Engine",
+				},
+			},
+		},
+	}
+	embedJSON, _ := json.Marshal(embedPayload)
+	writer.WriteField("payload_json", string(embedJSON))
+
+	// Add file
+	part, _ := writer.CreateFormFile("file", filepath.Base(filePath))
+	part.Write(fileData)
+	writer.Close()
+
+	// Send request
+	go func() {
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Post(s.discordWebhook, writer.FormDataContentType(), &b)
+		if err != nil {
+			log.Printf("Discord webhook file upload error: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 && resp.StatusCode != 204 {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("Discord webhook error: %d %s", resp.StatusCode, string(body))
+		}
+	}()
+}
+
+// sendSimpleEmbed sends a simple embed without file attachment
+func (s *Server) sendSimpleEmbed(color int, title, description string) {
 	payload := map[string]any{
 		"username":   "Xalgorix",
 		"avatar_url": "https://raw.githubusercontent.com/xalgord/xalgord/main/assets/logo.png",

@@ -5,9 +5,8 @@
 <br/>
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
-[![Author](https://img.shields.io/badge/Author-@xalgord-00ff88?style=for-the-badge&logo=github&logoColor=white)](https://github.com/xalgord)
 [![License](https://img.shields.io/badge/License-MIT-00ff88?style=for-the-badge)](LICENSE)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/xalgord)
+[![Discord](https://img.shields.io/badge/Discord-00ff88?style=for-the-badge&logo=discord)](https://discord.gg/xalgorix)
 
 <p><i>Point it at a target. It does the rest.</i></p>
 
@@ -15,428 +14,310 @@
 
 ---
 
-Xalgorix is a fully autonomous AI pentesting agent that uses LLMs to drive comprehensive security assessments. Point it at a target, and it runs through a 20-phase penetration testing methodology — from reconnaissance to exploitation — using real tools, with zero human intervention.
+## 🚀 What is Xalgorix?
 
-## Features
+Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLMs to drive comprehensive security assessments — from reconnaissance to exploitation — using real security tools, with zero human intervention.
 
-- **Autonomous Agent Loop** — LLM-driven iterative scanning with tool calls parsed from XML
-- **20 Critical Rules** — Persistence & bypass rules, parameter testing, hidden param discovery, vulnerability chaining
-- **Auto-Install Missing Tools** — Detects `command not found`, resolves the package, installs it, and retries (70+ tool→package mappings)
-- **Encoding Bypass Detection** — Detects base64, hex, and URL-encoded malicious commands
-- **Circuit Breaker** — Automatically blocks failing tools after 5 consecutive failures (60s recovery)
-- **Comprehensive Recon Toolset** — subfinder, findomain, assetfinder, gospider, gau, waymore, paramspider, arjun, and more
-- **Cyber Glass Web UI** — Dark mode dashboard with cyber green accents, real-time WebSocket feed, live clock, and token tracking
-- **Scan Queue Persistence** — Queue state saved to disk, can resume interrupted scans after server restart
-- **Persistent Scan Data** — Scans saved to `~/xalgorix-data/scans/` with 30-day retention, survives page refreshes and server restarts
-- **Discord Webhook Notifications** — Real-time alerts for scan start, vulnerability found, and scan finished
-- **Multi-LLM Provider Support** — Switch between OpenAI, Anthropic, DeepSeek, Google, Groq, Ollama, MiniMax, or custom providers
-- **Scan Modes** — Single site or wildcard (subdomain enumeration) scanning
-- **Multi-Target Queue** — Upload a targets file for sequential auto-scanning
-- **Vulnerability Reporting** — Structured JSON reports with CVSS scores, PoC scripts, and remediation steps
-- **PDF Pentest Reports** — Professional PDF reports auto-generated on scan completion
-- **Safety Guardrails** — Destructive commands (rm -rf, DROP TABLE, DELETE, etc.) are blocked at the terminal level
-- **Encoding Bypass Protection** — Detects base64, hex, and URL-encoded command attempts
-- **Zero False Positives** — Agent manually verifies every finding before reporting
-- **Multi-Agent Support** — Spawn sub-agents for parallelized task delegation
-- **Browser Automation** — Headless Chromium via go-rod for dynamic page testing
-- **Real-Time Token Counter** — Tracks LLM token usage (K/M format) across iterations
-- **Config File Support** — `~/.xalgorix.env` auto-loaded, works with `sudo`
-- **Rate Limiting** — Configurable via UI or environment variables (default: 100 req/60s)
-- **Self-Update** — `xalgorix -up` updates to the latest version
-- **Daemon Mode** — `xalgorix --web -d` runs in background
-- **Mobile Responsive** — Web UI works on tablet and phone screens
-- **WebSocket Auto-Reconnect** — Exponential backoff reconnection with status indicator
-- **Better Error Messages** — Helpful suggestions when tools fail
-- **11 Built-in Tools** — Terminal, Python, browser, file editor, web search, HTTP proxy, Notes, and more
+> **TL;DR:** Give it a target URL, and Xalgorix will find vulnerabilities, generate a professional PDF report, and optionally DM you on Discord — all automatically.
 
-## Architecture
+---
 
-```
-cmd/xalgorix/           CLI entrypoint (flags, web/CLI mode)
-├── build.sh            Build script with VCS handling
-internal/
-├── agent/              Core agent loop (LLM → parse → execute → repeat)
-│                       20 critical rules, 20-phase methodology
-├── config/             Environment-based configuration
-├── llm/
-│   ├── client.go       OpenAI-compatible API client (streaming + token tracking)
-│   └── parser.go       Multi-format XML tool call parser
-├── tools/
-│   ├── registry.go     Tool registry + parameter validation + circuit breaker
-│   ├── terminal/       Shell commands with auto-install + encoding detection
-│   ├── python/        Python subprocess execution
-│   ├── browser/        Headless Chromium automation (go-rod)
-│   ├── fileedit/       File viewing, editing, listing, searching
-│   ├── proxy/          Caido HTTP proxy integration
-│   ├── websearch/      DuckDuckGo web search
-│   ├── reporting/      Vulnerability reporting + JSON export
-│   ├── notes/          Agent memory (persistent key-value notes)
-│   ├── finish/         Scan completion signal
-│   └── agentsgraph/    Multi-agent delegation
-├── tui/                Terminal UI (CLI mode)
-└── web/
-    ├── server.go       HTTP + WebSocket server, scan persistence, Discord webhook
-    │                   - Rate limiting middleware
-    │   - Queue state persistence
-    │   - Circuit breaker integration
-    └── static/         Embedded HTML/CSS/JS dashboard (cyber glass theme)
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Go 1.25+
-- An OpenAI-compatible LLM API (OpenAI, Anthropic, DeepSeek, Ollama, etc.)
-- Security tools are auto-installed, but pre-installing recommended: `nmap`, `nuclei`, `subfinder`, `httpx`
-
-### Install
-
-```bash
-go install github.com/xalgord/xalgorix/cmd/xalgorix@latest
-```
-
-> **💡 Recommended:** Install and run as `root` user to avoid permission issues when Xalgorix auto-installs missing security tools (nmap, nuclei, subfinder, etc.).
-
-<details>
-<summary>Or build from source</summary>
-
-```bash
-git clone https://github.com/xalgord/xalgorix.git
-cd xalgorix
-./build.sh                 # Uses build.sh (auto VCS handling)
-sudo ./build.sh --install  # Build and install
-```
-
-</details>
-
-### Configure
-
-Create `~/.xalgorix.env` (recommended — works with `sudo`):
-
-```bash
-# ~/.xalgorix.env
-XALGORIX_LLM=minimax/MiniMax-M2.5
-XALGORIX_API_KEY=your-key-here
-XALGORIX_API_BASE=https://api.minimax.io/
-
-# Optional — Discord notifications
-XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/your-webhook-url
-
-# Optional — Rate limiting (default: 100 requests per 60 seconds)
-XALGORIX_RATE_LIMIT_REQUESTS=100
-XALGORIX_RATE_LIMIT_WINDOW=60
-```
-
-<details>
-<summary>Or use environment variables</summary>
-
-```bash
-export XALGORIX_LLM="minimax/MiniMax-M2.5"              # or openai/gpt-5.4, anthropic/claude-sonnet-4.6, etc.
-export XALGORIX_API_KEY="sk-your-key-here"
-export XALGORIX_API_BASE="https://api.minimax.io/"      # provider API base
-export XALGORIX_DISCORD_WEBHOOK="https://discord.com/api/webhooks/your-webhook-url"
-export XALGORIX_RATE_LIMIT_REQUESTS=100
-export XALGORIX_RATE_LIMIT_WINDOW=60
-```
-
-</details>
-
-### Run
-
-```bash
-# Web UI (recommended)
-sudo xalgorix --web                    # http://localhost:1337
-sudo xalgorix --web --port 8080        # custom port
-
-# CLI mode
-sudo xalgorix --target https://example.com
-sudo xalgorix --target https://example.com --instruction "Focus on SQLi and XSS"
-sudo xalgorix --target 192.168.1.0/24 --model minimax/MiniMax-M2.5
-```
-
-> **Tip:** Run as `root` for full tool access (nmap SYN scan, package installation, etc.)
-
-### Custom Instructions
-
-Use the `--instruction` flag (CLI) or the instructions textarea (Web UI) to guide the agent. Here are some examples:
-
-```text
-# Authenticated Testing — provide credentials
-Use these credentials for authenticated testing:
-  Email: admin@example.com
-  Password: P@ssw0rd123
-Login at https://example.com/login and test all authenticated endpoints.
-
-# Scope Restrictions
-Only test *.example.com subdomains. Do NOT test third-party domains or CDNs.
-
-# Focus on Specific Vulnerabilities
-Focus on SQL Injection, IDOR, and authentication bypass. Skip XSS and CSRF.
-
-# API Testing
-The API docs are at https://example.com/api/docs. Test all API endpoints
-for broken access control using these API keys:
-  Admin:  Bearer eyJhbG...
-  User:   Bearer eyJibW...
-
-# Bug Bounty Program Rules
-This is a HackerOne program. Out of scope: DoS, social engineering, phishing.
-Only report P1-P3 severity bugs. Rate limiting is in place — keep requests slow.
-
-# Internal Network
-Scan the 10.0.0.0/24 subnet. Focus on exposed services, default credentials,
-and unpatched CVEs. Check for SMB shares and open databases.
-```
-
-> **Tip:** The more context you give, the smarter the agent's testing strategy will be.
-
-## Web UI
-
-The cyber glass dark mode dashboard provides:
+## ✨ Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Live Feed** | Real-time WebSocket stream of agent actions |
-| **Scan Modes** | Dropdown: Single Site / Wildcard scan |
-| **Multi-Target** | Upload a file with one target per line |
-| **Custom Instructions** | Textarea or file upload for extra directives |
-| **LLM Provider Switching** | Dropdown to switch between providers at runtime |
-| **Rate Limiting** | Configurable via UI (requests/window) |
-| **Discord Notifications** | Paste a webhook URL for scan/vuln/completion alerts |
-| **Vulnerability Cards** | Severity-colored cards with CVSS scores (real-time) |
-| **Token Counter** | Real-time LLM token usage display (K/M format) |
-| **Persistent Scans** | Scan data saved to disk, survives page refreshes |
-| **Queue Resume** | Recover interrupted scans after server restart |
-| **Connection Status** | WebSocket status indicator (green/yellow/red dot) |
-| **Live Clock** | Real-time clock |
+| 🤖 **Autonomous Agent** | LLM-driven pentesting with 20-phase methodology |
+| 🔒 **Safety First** | Blocks destructive commands, encoding bypass detection |
+| 🔌 **Circuit Breaker** | Auto-blocks failing tools after 5 attempts |
+| 🌐 **Web UI** | Dark mode dashboard with live feed & token tracking |
+| 📱 **Mobile Ready** | Works on phones & tablets |
+| 💾 **Scan Persistence** | Resume interrupted scans after restart |
+| 📊 **PDF Reports** | Professional pentest reports auto-generated |
+| 🔔 **Discord Alerts** | Get notified on scan start/vuln/completion |
+| 🔧 **Auto-Install** | 70+ tool→package mappings |
+| 🧠 **Multi-LLM** | OpenAI, Anthropic, DeepSeek, MiniMax, Groq, Ollama |
 
-### Queue Persistence
+---
 
-If the server crashes or restarts during a multi-target scan:
+## 🛠️ Quick Start
 
-1. On startup, Xalgorix detects the interrupted queue
-2. Check status: `GET /api/queue/status`
-3. Resume: `POST /api/queue/resume`
-4. Clear: `POST /api/queue/clear`
+### 1️⃣ Install
 
-The Web UI shows a notification when an interrupted queue is detected.
-
-## Discord Webhook Notifications
-
-Get real-time Discord alerts with rich embed messages:
-
-| Event | Embed Color | Details |
-|-------|-------------|---------|
-| 🚀 **Scan Started** | Green | Target list, scan mode, total count |
-| 🐛 **Vulnerability Found** | Red/Amber/Blue by severity | Title, endpoint, CVSS score |
-| ✅ **Scan Finished** | Blue | Vuln count, completion time |
-
-**Setup options:**
 ```bash
-# Option 1: Environment variable (recommended)
-export XALGORIX_DISCORD_WEBHOOK="https://discord.com/api/webhooks/1234/abcdef"
+# Quick install
+go install github.com/xalgord/xalgorix/cmd/xalgorix@latest
 
-# Option 2: Web UI — paste the URL in 🔔 Discord Notifications section
+# Or build from source
+git clone https://github.com/xalgord/xalgorix.git
+cd xalgorix
+./build.sh --install
 ```
 
-## Persistent Scan Data
+### 2️⃣ Configure
 
-All scan data is stored in `~/xalgorix-data/scans/` with per-target directories:
-
-```
-~/xalgorix-data/scans/
-├── example.com_a3f8b2/
-│   └── scan.json          # Full scan record (events, vulns, stats, tokens)
-├── target.io_c9d1e4/
-│   └── scan.json
-├── queue_state.json       # Interrupted queue state (for resume)
-└── ...
+```bash
+# Create ~/.xalgorix.env
+nano ~/.xalgorix.env
 ```
 
-- **Auto-cleanup:** Scans older than 30 days are automatically deleted on server startup
-- **Page refresh safe:** Last scan is restored on page load via `/api/scans/latest`
-- **Scan history API:** `GET /api/scans` returns all saved scans (newest first)
-- **Queue recovery:** Interrupted scans can be resumed via `/api/queue/resume`
+```bash
+# Required
+XALGORIX_LLM=minimax/MiniMax-M2.5
+XALGORIX_API_KEY=your_api_key
+XALGORIX_API_BASE=https://api.minimax.io/
 
-## Safety Guardrails
-
-Xalgorix is designed to **test and report**, never **modify or destroy**.
-
-### Blocked Commands (hard-blocked at terminal level)
-
-| Category | Blocked Patterns |
-|---|---|
-| **Filesystem** | `rm -rf /`, `rm -rf ~`, `rm -rf .`, `mkfs`, `dd if=`, `> /dev/sd` |
-| **SQL** | `DROP TABLE`, `DROP DATABASE`, `DELETE FROM`, `TRUNCATE TABLE`, `UPDATE` |
-| **System** | `shutdown`, `reboot`, `halt`, `poweroff`, `init 0`, `init 6`, fork bombs |
-| **Code** | `shutil.rmtree`, `os.remove` |
-| **Permissions** | `chmod 777 /`, `chown -R` |
-
-If the agent attempts any of these, the command is **rejected before execution** with:
+# Optional
+XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
 ```
-[BLOCKED] Destructive command rejected: SQL DROP TABLE. Xalgorix is read-only.
+
+### 3️⃣ Run
+
+```bash
+# Web UI (recommended)
+sudo xalgorix --web
+
+# Or CLI
+sudo xalgorix --target https://example.com
+```
+
+---
+
+## 📖 Usage Guide
+
+### Web UI Features
+
+| Feature | Usage |
+|---------|-------|
+| 🎯 **Single Scan** | Enter URL, click Start |
+| 🌐 **Wildcard Scan** | Select "Wildcard" mode for subdomain enum |
+| 📂 **Multi-Target** | Upload a `.txt` file with one target per line |
+| 💬 **Custom Instructions** | Tell Xalgorix what to focus on |
+| ⚙️ **LLM Provider** | Switch providers in settings |
+| 🔔 **Discord** | Add webhook for alerts |
+
+### Example Instructions
+
+```text
+# Focus on specific vulns
+"Focus on SQL Injection and IDOR. Skip XSS."
+
+# Authenticated testing
+"Login with: admin@email.com / Password123"
+
+# Bug bounty rules
+"This is a HackerOne program. Out of scope: DoS, social engineering."
+
+# Internal network
+"Scan 10.0.0.0/24. Focus on SMB and database services."
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+xalgorix/
+├── cmd/xalgorix/          # CLI entry point
+├── internal/
+│   ├── agent/             # 🤖 Core agent loop
+│   ├── config/            # ⚙️ Configuration
+│   ├── llm/               # 🧠 LLM client & parser
+│   ├── tools/             # 🔧 11 built-in tools
+│   │   ├── terminal/      # 💻 Command execution
+│   │   ├── browser/      # 🌐 Headless Chrome
+│   │   ├── python/       # 🐍 Python scripts
+│   │   ├── reporting/     # 📊 Vulnerability reports
+│   │   └── ...
+│   ├── web/
+│   │   ├── server.go      # 🌎 HTTP + WebSocket
+│   │   └── static/        # 🎨 Web UI (HTML/CSS/JS)
+│   └── tui/               # 📟 Terminal UI
+└── skills/                # 📚 Vulnerability knowledge
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XALGORIX_LLM` | — | Model (e.g., `minimax/MiniMax-M2.5`) |
+| `XALGORIX_API_KEY` | — | Your API key |
+| `XALGORIX_API_BASE` | MiniMax | API endpoint |
+| `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL |
+| `XALGORIX_RATE_LIMIT_REQUESTS` | 100 | Requests per window |
+| `XALGORIX_RATE_LIMIT_WINDOW` | 60 | Window in seconds |
+| `XALGORIX_MAX_ITERATIONS` | 0 | 0 = unlimited |
+| `XALGORIX_DISABLE_BROWSER` | false | Disable headless Chrome |
+
+### Supported LLM Providers
+
+| Provider | Model Example |
+|----------|--------------|
+| 🔵 MiniMax | `minimax/MiniMax-M2.5` |
+| 🟢 OpenAI | `openai/gpt-5.4` |
+| 🔴 Anthropic | `anthropic/claude-sonnet-4.6` |
+| 🟣 DeepSeek | `deepseek/deepseek-v4` |
+| 🟠 Google | `google/gemini-3.1-pro` |
+| 🟡 Groq | `groq/llama-4-70b` |
+| ⚫ Ollama | `ollama/llama3` (local) |
+
+---
+
+## 🛡️ Safety Features
+
+### Blocked Commands
+
+```
+❌ Filesystem:  rm -rf /, rm -rf ~, mkfs, dd
+❌ SQL:         DROP TABLE, DELETE FROM, UPDATE
+❌ System:      shutdown, reboot, halt, poweroff
+❌ Code:        shutil.rmtree, os.remove
 ```
 
 ### Encoding Bypass Detection
 
-Xalgorix also detects obfuscated commands:
+Xalgorix detects obfuscated commands:
 
-| Technique | Detection |
-|---|---|
-| Base64 | Decodes and checks for blocked patterns |
-| Hex | Detects hex-encoded commands |
-| URL Encoding | Decodes URL-encoded payloads |
-| Obfuscation | Warns on chr(), \x, variable expansion |
-
-Example blocking:
-```
-[BLOCKED] Destructive command rejected: SQL DROP TABLE (detected via base64 decoding)
-```
+| Technique | Example |
+|----------|--------|
+| Base64 | `echo cm0gL3JmIC8= \| base64 -d` |
+| Hex | `\x72\x6d\x20\x2d\x72\x66` |
+| URL | `%72%6d%20%2d%72%66` |
 
 ### Circuit Breaker
 
-To prevent wasting time on failing tools:
+After **5 consecutive failures**, a tool is temporarily blocked for **60 seconds** to prevent wasting time.
 
-- After **5 consecutive failures**, a tool is temporarily blocked
-- **60 seconds** cooldown before retry
-- Helps agent switch to alternative tools faster
+---
 
-Example:
-```
-[BLOCKED] Circuit breaker OPEN for 'nmap' — too many failures. Try again in 45 seconds.
-```
+## 📊 API Endpoints
 
-### Agent Safety Rules
-- Uses `SELECT` to verify SQL injection — never `DROP`/`DELETE`/`UPDATE`
-- Uses safe payloads: time-based blind SQLi, reflected XSS, SSRF with callbacks
-- Every vulnerability is **manually verified** before reporting — zero false positives
-
-## Built-in Tools
-
-| Tool | Description |
-|------|-------------|
-| `terminal_execute` | Run shell commands (auto-installs missing tools) |
-| `python_action` | Execute Python scripts in subprocess |
-| `browser_action` | Headless Chromium: navigate, click, type, screenshot, JS |
-| `send_request` | HTTP requests through Caido proxy (fallback: direct) |
-| `list_requests` | Query Caido's captured traffic via GraphQL |
-| `str_replace_editor` | View, create, and edit files |
-| `list_files` | List directory contents |
-| `search_files` | Grep/ripgrep across files |
-| `web_search` | DuckDuckGo search |
-| `report_vulnerability` | Log findings with severity, CVSS, PoC, remediation |
-| `add_note` / `read_notes` | Persistent key-value memory across iterations |
-| `create_agent` | Spawn sub-agents for parallel tasks |
-| `finish` | Complete the scan with summary |
-
-## Configuration
-
-All configuration via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `XALGORIX_LLM` | *(required)* | Model name (e.g. `minimax/MiniMax-M2.5`) |
-| `XALGORIX_API_KEY` | *(required)* | API key |
-| `XALGORIX_API_BASE` | `https://api.minimax.io/` | API base URL |
-| `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL for notifications |
-| `XALGORIX_MAX_ITERATIONS` | `0` (unlimited) | Max agent iterations |
-| `XALGORIX_RATE_LIMIT_REQUESTS` | `100` | Requests allowed per window |
-| `XALGORIX_RATE_LIMIT_WINDOW` | `60` | Rate limit window (seconds) |
-| `XALGORIX_WORKSPACE` | `$PWD` | Working directory |
-| `XALGORIX_REASONING_EFFORT` | `high` | LLM reasoning effort |
-| `XALGORIX_LLM_MAX_RETRIES` | `5` | API retry count |
-| `XALGORIX_DISABLE_BROWSER` | `false` | Disable headless browser |
-| `CAIDO_PORT` | auto-detect | Caido proxy port |
-| `CAIDO_API_TOKEN` | — | Caido GraphQL API token |
-
-## API Endpoints
-
-### Scan Endpoints
+### Scans
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/scan` | Start a new scan |
-| POST | `/api/stop` | Stop running scan |
-| GET | `/api/status` | Get scan status |
-| GET | `/api/scans` | List all scans |
-| GET | `/api/scans/:id` | Get scan details |
-| GET | `/api/scans/latest` | Get latest scan |
-| GET | `/api/report/:id` | Download PDF report |
+| `POST` | `/api/scan` | Start scan |
+| `POST` | `/api/stop` | Stop scan |
+| `GET` | `/api/status` | Get status |
+| `GET` | `/api/scans` | List scans |
+| `GET` | `/api/scans/:id` | Get scan details |
+| `GET` | `/api/report/:id` | Download PDF |
 
-### Queue Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/queue/status` | Check for interrupted queue |
-| POST | `/api/queue/resume` | Resume interrupted scan |
-| POST | `/api/queue/clear` | Clear queue state |
-
-### Settings Endpoints
+### Queue
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/settings/rate-limit` | Get rate limit settings |
-| POST | `/api/settings/rate-limit` | Update rate limit settings |
+| `GET` | `/api/queue/status` | Check interrupted queue |
+| `POST` | `/api/queue/resume` | Resume scan |
+| `POST` | `/api/queue/clear` | Clear queue |
 
-## Recon Toolset
+### Settings
 
-The agent uses an extensive set of recon tools (auto-installed if missing):
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/settings/rate-limit` | Get rate limit |
+| `POST` | `/api/settings/rate-limit` | Update rate limit |
+
+---
+
+## 🔍 Recon Tools (Auto-Installed)
 
 | Category | Tools |
 |----------|-------|
-| **Subdomain Enumeration** | subfinder, findomain, assetfinder, amass |
-| **URL Discovery** | gospider, katana, hakrawler, gau, waymore, waybackurls |
-| **Parameter Discovery** | paramspider, arjun, x8, uro |
-| **Live Host Probing** | httpx (Go), dnsx |
-| **Port Scanning** | nmap (full TCP + top UDP) |
-| **Vulnerability Scanning** | nuclei, nikto, sqlmap, dalfox |
-| **Directory Fuzzing** | gobuster, ffuf |
-| **Tech Fingerprinting** | whatweb, wappalyzer, wafw00f |
+| 🌐 Subdomains | subfinder, findomain, assetfinder, amass |
+| 🔎 URLs | gospider, katana, gau, waybackurls |
+| 🔧 Parameters | paramspider, arjun |
+| 🚀 Ports | nmap |
+| 💥 Vulns | nuclei, nikto, sqlmap, dalfox |
+| 📁 Fuzzing | gobuster, ffuf |
+| 🖥️ Tech | whatweb, wappalyzer |
 
-## Default Methodology (20 Phases)
+---
 
-1. **Reconnaissance** — Subdomain enum, port scanning, directory brute-force, tech fingerprinting, JS analysis, hidden param discovery
-2. **Vulnerability Scanning** — Nuclei (full templates), nikto, nmap vuln scripts
-3. **Content Discovery** — Directory fuzzing, backup files, admin panels, sensitive paths
-4. **SSL/TLS & Headers** — Cipher enumeration, certificate validation, security header audit, CORS check
-5. **Authentication Testing** — SQLi on login, brute-force, OAuth, 2FA bypass, default credentials
-6. **Injection Testing** — XSS (reflected/stored/DOM), SQLi (error/blind/time), command injection, XXE, SSTI
-7. **SSRF & Redirects** — Parameter fuzzing for SSRF, cloud metadata, open redirect chaining
-8. **IDOR & Access Control** — Broken access control, horizontal/vertical privilege escalation
-9. **API & GraphQL** — Introspection, broken object-level auth, rate limiting, mass assignment
-10. **File Upload** — Extension bypass, content-type manipulation, webshell upload
-11. **Deserialization & RCE** — Java/PHP/Python/Node.js/Log4j exploit chains
-12. **Race Conditions** — TOCTOU, parallel request testing, business logic flaws
-13. **Subdomain Takeover** — CNAME dangling, NS takeover, service fingerprinting
-14. **Email Security** — SPF, DKIM, DMARC validation
-15. **Cloud Misconfigs** — S3/Azure/GCP bucket enumeration, Kubernetes, Docker
-16. **WebSocket Security** — Origin validation, message injection, auth bypass
-17. **CMS Testing** — WordPress, Joomla, Drupal-specific scanning
-18. **Broken Link Hijacking** — External link validation, content spoofing
-19. **Supply Chain** — JavaScript library vulnerabilities, dependency confusion
-20. **Comprehensive Reporting** — Structured JSON reports with CVSS, PoC, and remediation
+## 📋 20-Phase Methodology
 
-## LLM Compatibility
+1. 🔍 **Recon** — Subdomains, ports, directories
+2. 🦠 **Vuln Scan** — Nuclei, nikto, nmap scripts
+3. 📂 **Content** — Fuzzing, backups, admin panels
+4. 🔐 **SSL/TLS** — Cipher, certificates, headers
+5. 🔑 **Auth** — SQLi login, brute-force, OAuth
+6. 💉 **Injection** — XSS, SQLi, Command, XXE, SSTI
+7. 🔄 **SSRF** — Param fuzzing, cloud metadata
+8. 🚪 **IDOR** — Access control, privilege escalation
+9. 🌐 **API** — GraphQL, REST, rate limiting
+10. 📤 **Upload** — Extension bypass, webshells
+11. ⚙️ **RCE** — Deserialization, Log4j
+12. ⏱️ **Race** — TOCTOU, business logic
+13. 🌟 **Takeover** — Subdomain, CNAME
+14. 📧 **Email** — SPF, DKIM, DMARC
+15. ☁️ **Cloud** — S3, Azure, GCP, K8s
+16. 🔌 **WebSocket** — Origin, injection
+17. CMS | WordPress, Joomla, Drupal
+18. 🔗 **Links** — Broken link hijacking
+19. 📦 **Supply Chain** — JS libs, dependencies
+20. 📝 **Report** — JSON + PDF
 
-Works with any OpenAI-compatible chat completions API:
+---
 
-| Provider | Model Example | Tested |
-|----------|--------------|--------|
-| MiniMax | `minimax/MiniMax-M2.5` | ✅ |
-| OpenAI | `openai/gpt-5.4` | ✅ |
-| Anthropic | `anthropic/claude-sonnet-4.6` | ✅ |
-| DeepSeek | `deepseek/deepseek-v4` | ✅ |
-| Google | `google/gemini-3.1-pro` | ✅ |
-| Groq | `groq/llama-4-70b` | ✅ |
-| Ollama | `ollama/llama4` | ✅ (local) |
+## 📄 PDF Report Contents
 
-## License
+The auto-generated report includes:
 
-This project is licensed under the [MIT License](LICENSE).
+- ✅ Cover page with target & date
+- 📊 Executive summary with vuln counts
+- 🐛 Vulnerability details (CVSS, PoC, remediation)
+- 🔗 Tested endpoints
+- 📋 Methodology applied
+- ⚠️ Legal disclaimer
+
+---
+
+## 📁 Data Storage
+
+```
+~/xalgorix-data/scans/
+├── example.com_abc123/
+│   └── scan.json
+├── target.io_def456/
+│   └── scan.json
+└── queue_state.json
+```
+
+- 📅 30-day auto-cleanup
+- 💾 Survives page refresh
+- 🔄 Queue resume after restart
+
+---
+
+## 🤝 Contributing
+
+Pull requests welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## 📜 License
+
+MIT License — see [LICENSE](LICENSE).
+
+---
+
+## 🔗 Links
+
+| Resource | URL |
+|----------|-----|
+| 📖 Documentation | [docs.xalgorix.io](https://docs.xalgorix.io) |
+| 💬 Discord | [discord.gg/xalgorix](https://discord.gg/xalgorix) |
+| 🐛 Issues | [github.com/xalgord/xalgorix/issues](https://github.com/xalgord/xalgorix/issues) |
+| ☕ Donate | [buymeacoffee.com/xalgord](https://buymeacoffee.com/xalgord) |
 
 ---
 
 <div align="center">
-<sub>Built by <a href="https://github.com/xalgord">@xalgord</a> — for security researchers. Use responsibly.</sub>
+
+**Built with ⚡ by [@xalgord](https://github.com/xalgord)**  
+*Use responsibly.*
+
 </div>
