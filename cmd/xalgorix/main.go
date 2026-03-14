@@ -15,7 +15,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.6.5"
+const version = "0.6.6"
 
 func main() {
 	args := parseArgs()
@@ -29,6 +29,12 @@ func main() {
 	// Handle stop command
 	if args.stop {
 		handleStop()
+		os.Exit(0)
+	}
+
+	// Handle restart command
+	if args.restart {
+		handleRestart()
 		os.Exit(0)
 	}
 
@@ -151,35 +157,6 @@ func main() {
 			port = 1337
 		}
 
-		// Daemon mode: re-launch in background
-		if args.daemon {
-			// Build args without -d/--daemon to avoid infinite loop
-			var newArgs []string
-			for _, a := range os.Args[1:] {
-				if a != "-d" && a != "--daemon" {
-					newArgs = append(newArgs, a)
-				}
-			}
-			logFile, err := os.OpenFile("/tmp/xalgorix.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
-				os.Exit(1)
-			}
-			cmd := exec.Command(os.Args[0], newArgs...)
-			cmd.Stdout = logFile
-			cmd.Stderr = logFile
-			cmd.Env = os.Environ()
-			if err := cmd.Start(); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to start daemon: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Xalgorix running in background (PID: %d)\n", cmd.Process.Pid)
-			fmt.Printf("  Web UI: http://localhost:%d\n", port)
-			fmt.Printf("  Logs:   /tmp/xalgorix.log\n")
-			fmt.Printf("  Stop:   kill %d\n", cmd.Process.Pid)
-			os.Exit(0)
-		}
-
 		fmt.Print(tui.Banner)
 		fmt.Println()
 		fmt.Printf("\n  Xalgorix Web UI starting on port %d...\n", port)
@@ -217,11 +194,11 @@ type cliArgs struct {
 	model       string
 	version     bool
 	update      bool
-	daemon      bool
 	webUI       bool
 	port        int
 	start       bool
 	stop        bool
+	restart     bool
 	uninstall   bool
 }
 
@@ -255,14 +232,14 @@ func parseArgs() cliArgs {
 			args.webUI = true
 		case "--update", "-up":
 			args.update = true
-		case "--daemon", "-d":
-			args.daemon = true
 		case "--version", "-v":
 			args.version = true
 		case "--start":
 			args.start = true
 		case "--stop":
 			args.stop = true
+		case "--restart":
+			args.restart = true
 		case "--uninstall":
 			args.uninstall = true
 		case "--help", "-h":
@@ -297,7 +274,12 @@ func printUsage() {
 	fmt.Println("Modes:")
 	fmt.Println("  -w, --web                 Launch the Web UI dashboard")
 	fmt.Println("  -p, --port <port>         Web UI port (default: 1337)")
-	fmt.Println("  -d, --daemon              Run Web UI in background")
+	fmt.Println()
+	fmt.Println("Service Commands:")
+	fmt.Println("  --start                   Install and start as systemd service")
+	fmt.Println("  --stop                    Stop the service")
+	fmt.Println("  --restart                 Restart the service")
+	fmt.Println("  --uninstall               Remove from system")
 	fmt.Println()
 	fmt.Println("CLI Flags:")
 	fmt.Println("  -t, --target <url>        Target URL, IP, or local path (repeatable)")
@@ -329,69 +311,130 @@ func printUsage() {
 	fmt.Println()
 }
 
-// handleStart starts xalgorix as a background service
+// handleStart installs and starts xalgorix as a systemd service
 func handleStart() {
 	// Check if already running
-	cmd := exec.Command("pgrep", "-f", "xalgorix.*--web")
+	cmd := exec.Command("systemctl", "is-active", "xalgorix")
 	output, _ := cmd.Output()
-	if len(output) > 0 {
-		fmt.Println("⚠️  Xalgorix is already running!")
-		fmt.Println("   Use: xalgorix --stop to stop it first")
+	if strings.TrimSpace(string(output)) == "active" {
+		fmt.Println("⚠️  Xalgorix service is already running!")
+		fmt.Println("   Use: xalgorix --restart to restart it")
 		os.Exit(1)
 	}
 
 	// Check if binary exists
 	if _, err := os.Stat("/usr/local/bin/xalgorix"); os.IsNotExist(err) {
 		fmt.Println("❌ Xalgorix not found at /usr/local/bin/xalgorix")
-		fmt.Println("   Install with: go install or ./build.sh --install")
+		fmt.Println("   Install with: xalgorix --update")
 		os.Exit(1)
 	}
 
-	// Load env file
-	cfg := config.Get()
+	// Create systemd service file
+	serviceContent := `[Unit]
+Description=Xalgorix - Autonomous AI Pentesting Engine
+After=network.target
 
-	// Validate config
-	if err := cfg.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Configuration error: %s\n", err)
-		fmt.Fprintf(os.Stderr, "\nSet your model:\n")
-		fmt.Fprintf(os.Stderr, "   nano ~/.xalgorix.env\n")
-		fmt.Fprintf(os.Stderr, "   XALGORIX_LLM=minimax/MiniMax-M2.5\n")
-		fmt.Fprintf(os.Stderr, "   XALGORIX_API_KEY=your_key_here\n")
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/usr/local/bin/xalgorix --web
+Restart=always
+RestartSec=10
+
+Environment=XALGORIX_LLM=${XALGORIX_LLM}
+Environment=XALGORIX_API_KEY=${XALGORIX_API_KEY}
+Environment=XALGORIX_API_BASE=${XALGORIX_API_BASE}
+
+[Install]
+WantedBy=multi-user.target
+`
+	// Write service file
+	servicePath := "/etc/systemd/system/xalgorix.service"
+	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create service file: %v\n", err)
+		fmt.Println("   Trying to start without systemd...")
+		// Fallback: just start in background
+		startBackground()
+		return
+	}
+
+	// Reload systemd and enable service
+	cmd = exec.Command("systemctl", "daemon-reload")
+	cmd.Run()
+
+	cmd = exec.Command("systemctl", "enable", "xalgorix")
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Failed to enable service: %v\n", err)
+	}
+
+	// Start the service
+	cmd = exec.Command("systemctl", "start", "xalgorix")
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to start xalgorix service: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Start in background
+	fmt.Println("✅ Xalgorix installed and started as systemd service!")
+	fmt.Println("   Web UI: http://localhost:1337")
+	fmt.Println("   Logs:   journalctl -u xalgorix -f")
+	fmt.Println("   Status: systemctl status xalgorix")
+}
+
+func startBackground() {
 	logFile, err := os.OpenFile("/tmp/xalgorix.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to open log file: %v\n", err)
 		os.Exit(1)
 	}
 
-	startCmd := exec.Command("/usr/local/bin/xalgorix", "--web", "--daemon")
+	startCmd := exec.Command("/usr/local/bin/xalgorix", "--web")
 	startCmd.Stdout = logFile
 	startCmd.Stderr = logFile
+	startCmd.Env = os.Environ()
 
 	if err := startCmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to start xalgorix: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ Xalgorix started successfully!")
+	fmt.Println("✅ Xalgorix started in background!")
 	fmt.Println("   Web UI: http://localhost:1337")
 	fmt.Println("   Logs:   tail -f /tmp/xalgorix.log")
+	fmt.Printf("   PID:    %d\n", startCmd.Process.Pid)
 }
 
-// handleStop stops the running xalgorix service
+// handleStop stops the xalgorix service
 func handleStop() {
-	// Find and kill xalgorix processes
-	cmd := exec.Command("pkill", "-f", "xalgorix.*--web")
+	// Try systemctl first
+	cmd := exec.Command("systemctl", "stop", "xalgorix")
 	err := cmd.Run()
 	
 	if err != nil {
-		fmt.Println("⚠️  No running xalgorix process found")
-	} else {
-		fmt.Println("✅ Xalgorix stopped successfully!")
+		// Fallback: pkill
+		cmd = exec.Command("pkill", "-f", "xalgorix.*--web")
+		cmd.Run()
 	}
+	
+	fmt.Println("✅ Xalgorix stopped!")
+}
+
+// handleRestart restarts the xalgorix service
+func handleRestart() {
+	// Try systemctl first
+	cmd := exec.Command("systemctl", "restart", "xalgorix")
+	err := cmd.Run()
+	
+	if err != nil {
+		// Fallback: stop then start
+		handleStop()
+		startBackground()
+		return
+	}
+	
+	fmt.Println("✅ Xalgorix restarted!")
+	fmt.Println("   Web UI: http://localhost:1337")
 }
 
 // handleUninstall removes xalgorix from the system
