@@ -135,6 +135,7 @@ type ScanRequest struct {
 	APIBase        string   `json:"api_base"`         // provider API base URL
 	DiscordWebhook string   `json:"discord_webhook"` // Discord webhook URL
 	SeverityFilter []string `json:"severity_filter"` // e.g. ["critical", "high"]
+	OutOfScope     string   `json:"out_of_scope"`    // Out of scope items
 }
 
 // WSEvent is a WebSocket message sent to clients.
@@ -552,6 +553,9 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			instruction = "Perform a wildcard/subdomain enumeration scan. Discover subdomains, enumerate services, and assess each discovered host. " + instruction
+		} else {
+			// Single site mode - explicitly tell agent to NOT do subdomain enumeration
+			instruction = "This is a SINGLE TARGET scan. Do NOT enumerate subdomains or perform wildcard discovery. Only test the exact target URL provided. Focus on the main domain/IP only. " + instruction
 		}
 
 		s.broadcast(WSEvent{
@@ -740,10 +744,22 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 
 	// Add severity filter to instruction if specified
 	if len(severityFilter) > 0 {
-		severityText := "IMPORTANT: Only test for " + strings.Join(severityFilter, ", ") + " severity vulnerabilities. "
-		severityText += "Do NOT report low or informational findings. "
-		severityText += "Focus your testing on " + strings.Join(severityFilter, ", ") + " severity issues only."
+		severityText := "CRITICAL INSTRUCTION: You MUST ONLY look for and report "
+		
+		// Build severity list
+		severities := make([]string, len(severityFilter))
+		copy(severities, severityFilter)
+		severityText += strings.Join(severities, " and ") + " severity vulnerabilities. "
+		severityText += "DO NOT report, investigate, or mention any LOW severity, INFORMATIONAL, or INFO findings. "
+		severityText += "Ignore any potential LOW/INFO issues - they are out of scope for this engagement. "
+		severityText += "Focus ONLY on: " + strings.Join(severities, ", ") + "."
 		instruction = severityText + "\n\n" + instruction
+	}
+	
+	// Add out of scope to instruction if specified
+	if req.OutOfScope != "" {
+		outOfScopeText := "\n\nOUT OF SCOPE: The following are strictly OUT OF SCOPE for this test:\n" + req.OutOfScope + "\nDo NOT test, enumerate, or access any of these targets."
+		instruction = instruction + outOfScopeText
 	}
 
 	s.agent.Run(targets, instruction)
@@ -870,12 +886,12 @@ func (s *Server) handleDownloadReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reportPath := filepath.Join(s.dataDir, "scans", scanID, fmt.Sprintf("xalgorix_report_%s.pdf", scanID))
+	reportPath := filepath.Join(s.dataDir, scanID, fmt.Sprintf("xalgorix_report_%s.pdf", scanID))
 
 	// If report doesn't exist, try to generate it
 	if _, err := os.Stat(reportPath); os.IsNotExist(err) {
 		// Load scan record
-		scanPath := filepath.Join(s.dataDir, "scans", scanID, "scan.json")
+		scanPath := filepath.Join(s.dataDir, scanID, "scan.json")
 		data, err := os.ReadFile(scanPath)
 		if err != nil {
 			http.Error(w, "scan not found", http.StatusNotFound)

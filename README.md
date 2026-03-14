@@ -43,9 +43,12 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | Feature | Description |
 |---------|-------------|
 | 🤖 **Autonomous Agent** | LLM-driven pentesting with 20-phase methodology |
+| 🎯 **Severity Filter** | Filter by Critical/High/Medium/Low/Info |
+| 🚫 **Out of Scope** | Define targets to exclude from testing |
 | 🔒 **Safety First** | Blocks destructive commands, encoding bypass detection |
 | 🔌 **Circuit Breaker** | Auto-blocks failing tools after 5 attempts |
 | 🌐 **Web UI** | Dark mode dashboard with live feed & token tracking |
+| 🌐 **Browser + Caido** | Playwright/Chromium with Caido proxy integration |
 | 📱 **Mobile Ready** | Works on phones & tablets |
 | 💾 **Scan Persistence** | Resume interrupted scans after restart |
 | 📊 **PDF Reports** | Professional pentest reports auto-generated |
@@ -107,6 +110,8 @@ sudo xalgorix --target https://example.com
 | 🎯 **Single Scan** | Enter URL, click Start |
 | 🌐 **Wildcard Scan** | Select "Wildcard" mode for subdomain enum |
 | 📂 **Multi-Target** | Upload a `.txt` file with one target per line |
+| 🎯 **Severity Filter** | Check only Critical/High to skip Low/Info |
+| 🚫 **Out of Scope** | Exclude targets from testing |
 | 💬 **Custom Instructions** | Tell Xalgorix what to focus on |
 | ⚙️ **LLM Provider** | Switch providers in settings |
 | 🔔 **Discord** | Add webhook for alerts |
@@ -167,6 +172,8 @@ xalgorix/
 | `XALGORIX_RATE_LIMIT_WINDOW` | 60 | Window in seconds |
 | `XALGORIX_MAX_ITERATIONS` | 0 | 0 = unlimited |
 | `XALGORIX_DISABLE_BROWSER` | false | Disable headless Chrome |
+| `CAIDO_PORT` | 8080 | Caido proxy port for browser integration |
+| `CAIDO_API_TOKEN` | — | Caido GraphQL API token |
 
 ### Supported LLM Providers
 
@@ -239,7 +246,7 @@ After **5 consecutive failures**, a tool is temporarily blocked for **60 seconds
 
 ---
 
-## 🔍 Recon Tools (Auto-Installed)
+## 🔍 Recon Tools (Auto-Installed) (Auto-Installed)
 
 | Category | Tools |
 |----------|-------|

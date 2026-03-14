@@ -18,6 +18,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/fileedit"
 	"github.com/xalgord/xalgorix/internal/tools/finish"
 	"github.com/xalgord/xalgorix/internal/tools/notes"
+	"github.com/xalgord/xalgorix/internal/tools/playwright"
 	"github.com/xalgord/xalgorix/internal/tools/proxy"
 	"github.com/xalgord/xalgorix/internal/tools/python"
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
@@ -63,6 +64,7 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 	fileedit.Register(reg)
 	proxy.Register(reg)
 	browser.Register(reg)
+	playwright.Register(reg)
 	notes.Register(reg)
 	reporting.Register(reg)
 	finish.Register(reg)

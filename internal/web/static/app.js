@@ -636,6 +636,9 @@
 
         const instruction = document.getElementById('instruction-input').value.trim();
         const scanMode = document.getElementById('scan-mode').value;
+        
+        // Get out of scope
+        const outOfScope = document.getElementById('out-of-scope').value.trim();
 
         // Get severity filter
         const severityFilter = [];
@@ -675,7 +678,7 @@
         setStatus('running', 'SCANNING');
         startTimer();
 
-        const payload = { targets, instruction, scan_mode: scanMode, severity_filter: severityFilter };
+        const payload = { targets, instruction, scan_mode: scanMode, severity_filter: severityFilter, out_of_scope: outOfScope };
 
         // Include LLM provider settings
         const provider = document.getElementById('llm-provider').value;
