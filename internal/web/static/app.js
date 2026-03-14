@@ -12,6 +12,27 @@
     let timerInterval = null;
     const toolUsage = {};
 
+    // Simple markdown to HTML converter
+    function mdToHtml(text) {
+        if (!text) return '';
+        let html = text;
+        // Escape HTML first
+        html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        // Convert markdown
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+        html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+        html = html.replace(/\n\n/g, '</p><p>');
+        html = html.replace(/\n/g, '<br>');
+        // Wrap lists
+        html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+        return '<p>' + html + '</p>';
+    }
+
     // Multi-target queue
     let loadedTargets = [];
     let currentTargetIdx = 0;
@@ -387,12 +408,12 @@
         `;
         
         if (v.endpoint) html += `<div class="modal-section"><div class="modal-label">Endpoint</div><div class="modal-value"><code class="modal-code">${esc(v.endpoint)}</code></div></div>`;
-        if (v.description) html += `<div class="modal-section"><div class="modal-label">Description</div><div class="modal-value">${esc(v.description)}</div></div>`;
-        if (v.impact) html += `<div class="modal-section"><div class="modal-label">Impact</div><div class="modal-value">${esc(v.impact)}</div></div>`;
-        if (v.technical_analysis) html += `<div class="modal-section"><div class="modal-label">Technical Analysis</div><div class="modal-value">${esc(v.technical_analysis)}</div></div>`;
-        if (v.poc_description) html += `<div class="modal-section"><div class="modal-label">Proof of Concept</div><div class="modal-value">${esc(v.poc_description)}</div></div>`;
+        if (v.description) html += `<div class="modal-section"><div class="modal-label">Description</div><div class="modal-value">${mdToHtml(v.description)}</div></div>`;
+        if (v.impact) html += `<div class="modal-section"><div class="modal-label">Impact</div><div class="modal-value">${mdToHtml(v.impact)}</div></div>`;
+        if (v.technical_analysis) html += `<div class="modal-section"><div class="modal-label">Technical Analysis</div><div class="modal-value">${mdToHtml(v.technical_analysis)}</div></div>`;
+        if (v.poc_description) html += `<div class="modal-section"><div class="modal-label">Proof of Concept</div><div class="modal-value">${mdToHtml(v.poc_description)}</div></div>`;
         if (v.poc_script) html += `<div class="modal-section"><div class="modal-label">PoC Script</div><pre class="modal-pre">${esc(v.poc_script)}</pre></div>`;
-        if (v.remediation) html += `<div class="modal-section"><div class="modal-label">Remediation</div><div class="modal-value">${esc(v.remediation)}</div></div>`;
+        if (v.remediation) html += `<div class="modal-section"><div class="modal-label">Remediation</div><div class="modal-value">${mdToHtml(v.remediation)}</div></div>`;
         
         bodyEl.innerHTML = html;
         modal.classList.add('active');
