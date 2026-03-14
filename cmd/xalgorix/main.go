@@ -15,7 +15,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.6.7"
+const version = "0.6.8"
 
 func main() {
 	args := parseArgs()
@@ -115,12 +115,18 @@ func main() {
 			os.Exit(1)
 		}
 		
-		// Make executable and replace
+		// Make executable and copy to /usr/local/bin
 		os.Chmod(tmpFile.Name(), 0755)
-		err = os.Rename(tmpFile.Name(), "/usr/local/bin/xalgorix")
-		if err != nil {
-			// If rename fails (same filesystem), copy instead
-			cmd := exec.Command("cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+		
+		// Use sudo to copy
+		cmd := exec.Command("sudo", "cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			// Try without sudo
+			cmd = exec.Command("cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to install binary: %v\n", err)
 				os.Exit(1)
