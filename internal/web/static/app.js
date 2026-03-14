@@ -121,6 +121,8 @@
 
     // ── Event Handler ──────────────────────────────────────
     function handleEvent(evt) {
+        console.log('Received event:', evt.type, evt);
+        
         // Update token counter from any event that carries it
         if (evt.total_tokens && evt.total_tokens > 0) {
             const formatted = evt.total_tokens >= 1000000
@@ -129,7 +131,7 @@
                 ? (evt.total_tokens / 1000).toFixed(1) + 'K'
                 : String(evt.total_tokens);
             const el = document.getElementById('stat-tokens');
-            if (el.textContent !== formatted) {
+            if (el) {
                 el.textContent = formatted;
                 popStat('stat-tokens');
             }
@@ -180,12 +182,16 @@
 
             case 'thinking':
                 iterCount++;
+                const iterEl = document.getElementById('stat-iter');
+                if (iterEl) iterEl.textContent = iterCount;
                 popStat('stat-iter');
                 addFeedItem(renderThinking(evt.content), true);
                 break;
 
             case 'tool_call':
                 toolCount++;
+                const toolEl = document.getElementById('stat-tools');
+                if (toolEl) toolEl.textContent = toolCount;
                 popStat('stat-tools');
                 toolUsage[evt.tool_name] = (toolUsage[evt.tool_name] || 0) + 1;
                 updateToolStats();
@@ -197,6 +203,8 @@
                 // Real-time vuln rendering
                 if (evt.vulns && evt.vulns.length > 0) {
                     vulnCount += evt.vulns.length;
+                    const vulnEl = document.getElementById('stat-vulns');
+                    if (vulnEl) vulnEl.textContent = vulnCount;
                     popStat('stat-vulns');
                     renderVulns(evt.vulns);
                 }
@@ -319,37 +327,39 @@
         const empty = list.querySelector('.empty-state');
         if (empty) list.innerHTML = '';
         
-        document.getElementById('vuln-count').textContent = vulnCount;
+        const countEl = document.getElementById('vuln-count');
+        if (countEl) countEl.textContent = vulnCount;
         
         vulns.forEach((v) => {
             const li = document.createElement('li');
             li.className = 'vuln-item';
+            li._vulnData = v;
             li.innerHTML = `
-                <div class="vuln-header" onclick="toggleVuln(this)">
+                <div class="vuln-header" style="cursor:pointer">
                     <span class="vuln-severity-dot ${v.severity.toLowerCase()}"></span>
                     <span class="vuln-title-text">${esc(v.title)}</span>
                     <span class="vuln-badge ${v.severity.toLowerCase()}">${v.severity.toUpperCase()}</span>
                 </div>
-                <div class="vuln-detail">
-                    <div class="vuln-detail-content">
-                        ${v.endpoint ? `<div class="vuln-row"><span class="vuln-label">Endpoint</span><span class="vuln-value"><code>${esc(v.endpoint)}</code></span></div>` : ''}
-                        ${v.method ? `<div class="vuln-row"><span class="vuln-label">Method</span><span class="vuln-value">${esc(v.method)}</span></div>` : ''}
-                        ${v.cvss ? `<div class="vuln-row"><span class="vuln-label">CVSS</span><span class="vuln-value">${v.cvss.toFixed(1)}</span></div>` : ''}
-                        ${v.cve ? `<div class="vuln-row"><span class="vuln-label">CVE</span><span class="vuln-value"><code>${esc(v.cve)}</code></span></div>` : ''}
-                        ${v.description ? `<div class="vuln-row"><span class="vuln-label">Description</span><span class="vuln-value">${esc(v.description)}</span></div>` : ''}
-                        ${v.poc_script ? `<div class="vuln-row"><span class="vuln-label">PoC</span><pre class="vuln-pre">${esc(v.poc_script)}</pre></div>` : ''}
-                        ${v.remediation ? `<div class="vuln-row"><span class="vuln-label">Remediation</span><span class="vuln-value">${esc(v.remediation)}</span></div>` : ''}
-                    </div>
-                </div>
             `;
-            li._vulnData = v;
+            // Add click handler to open modal
+            li.querySelector('.vuln-header').addEventListener('click', function() {
+                openVulnModal(v);
+            });
             list.appendChild(li);
         });
     }
 
-    // Toggle vuln expand
-    window.toggleVuln = function(el) {
-        el.parentElement.classList.toggle('expanded');
+    // Toggle vuln expand - now opens modal
+    window.toggleVuln = function(el, vulnData) {
+        // Store vuln data on the element if not already there
+        if (vulnData) {
+            el.closest('.vuln-item')._vulnData = vulnData;
+        }
+        const vulnItem = el.closest('.vuln-item');
+        const v = vulnItem._vulnData;
+        if (v) {
+            openVulnModal(v);
+        }
     };
 
     // Modal functions
@@ -415,7 +425,15 @@
         const countEl = document.getElementById('tools-count');
         const entries = Object.entries(toolUsage).sort((a, b) => b[1] - a[1]);
         
-        countEl.textContent = entries.length;
+        // Calculate total tool calls
+        const totalCalls = Object.values(toolUsage).reduce((sum, count) => sum + count, 0);
+        
+        // Update header stat to match
+        const headerToolEl = document.getElementById('stat-tools');
+        if (headerToolEl) headerToolEl.textContent = totalCalls;
+        
+        // Show total in sidebar count
+        countEl.textContent = totalCalls;
         
         if (entries.length === 0) {
             list.innerHTML = '<li class="empty-state" style="padding: 20px 0"><div class="empty-title" style="font-size: 13px">No tools used yet</div></li>';
@@ -535,10 +553,33 @@
     // ── Live Clock ─────────────────────────────────────────
     function updateClock() {
         const now = new Date();
-        const h = String(now.getHours()).padStart(2, '0');
-        const m = String(now.getMinutes()).padStart(2, '0');
-        const s = String(now.getSeconds()).padStart(2, '0');
-        document.getElementById('live-clock').textContent = `${h}:${m}:${s}`;
+        
+        // If scan is running, show scan duration
+        if (scanRunning && scanStart) {
+            const elapsed = Math.floor((Date.now() - scanStart) / 1000);
+            const h = Math.floor(elapsed / 3600);
+            const m = Math.floor((elapsed % 3600) / 60);
+            const s = elapsed % 60;
+            
+            let timeStr;
+            if (h > 0) {
+                // 1+ hours: HH:MM:SS
+                timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            } else if (m > 0) {
+                // 1-59 minutes: MM:SS
+                timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            } else {
+                // Under 1 minute: Xs
+                timeStr = `${s}s`;
+            }
+            document.getElementById('live-clock').textContent = timeStr;
+        } else {
+            // Show time of day when idle
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('live-clock').textContent = `${h}:${m}:${s}`;
+        }
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -694,9 +735,44 @@
     };
 
     window.loadLastScan = async function() {
-        const scanId = window.location.pathname.replace('/', '');
-        if (!scanId) return;
+        // First check if there's a running scan via /api/status
+        try {
+            const statusResp = await fetch('/api/status');
+            const status = await statusResp.json();
+            
+            if (status.running && status.scan_id) {
+                // There's a running scan, load it
+                history.replaceState(null, '', '/' + status.scan_id);
+                await loadScanById(status.scan_id);
+                return;
+            }
+        } catch (e) {
+            console.log('Status check failed');
+        }
+        
+        // Otherwise try to load from URL path
+        let scanId = window.location.pathname.replace('/', '');
+        if (!scanId) {
+            // Try to get latest scan
+            try {
+                const resp = await fetch('/api/scans/latest');
+                const latest = await resp.json();
+                if (latest && latest.id) {
+                    scanId = latest.id;
+                    history.replaceState(null, '', '/' + scanId);
+                }
+            } catch (e) {
+                console.log('No latest scan found');
+                return;
+            }
+        }
+        
+        if (scanId) {
+            await loadScanById(scanId);
+        }
+    };
 
+    async function loadScanById(scanId) {
         try {
             const resp = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
             const scan = await resp.json();
@@ -707,18 +783,23 @@
             toolCount = scan.tool_calls || 0;
             vulnCount = (scan.vulns || []).length;
             
-            document.getElementById('stat-iter').textContent = String(iterCount);
-            document.getElementById('stat-tools').textContent = String(toolCount);
-            document.getElementById('stat-vulns').textContent = String(vulnCount);
+            const iterEl = document.getElementById('stat-iter');
+            const toolsEl = document.getElementById('stat-tools');
+            const vulnsEl = document.getElementById('stat-vulns');
+            const tokensEl = document.getElementById('stat-tokens');
+            
+            if (iterEl) iterEl.textContent = String(iterCount);
+            if (toolsEl) toolsEl.textContent = String(toolCount);
+            if (vulnsEl) vulnsEl.textContent = String(vulnCount);
 
             // Tokens
-            if (scan.total_tokens > 0) {
+            if (scan.total_tokens > 0 && tokensEl) {
                 const formatted = scan.total_tokens >= 1000000
                     ? (scan.total_tokens / 1000000).toFixed(1) + 'M'
                     : scan.total_tokens >= 1000
                     ? (scan.total_tokens / 1000).toFixed(1) + 'K'
                     : String(scan.total_tokens);
-                document.getElementById('stat-tokens').textContent = formatted;
+                tokensEl.textContent = formatted;
             }
 
             // Vulns

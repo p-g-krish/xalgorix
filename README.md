@@ -14,6 +14,22 @@
 
 ---
 
+## 📸 Screenshots
+
+### Web UI Dashboard
+![Web UI](assets/ui-screenshot-1.png)
+
+### Live Feed & Vulnerabilities
+![Live Feed](assets/ui-screenshot-2.png)
+
+### Severity Filter & Settings
+![Severity Filter](assets/ui-screenshot-3.png)
+
+### Scan Results
+![Results](assets/ui-screenshot-4.png)
+
+---
+
 ## 🚀 What is Xalgorix?
 
 Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLMs to drive comprehensive security assessments — from reconnaissance to exploitation — using real security tools, with zero human intervention.

@@ -56,8 +56,8 @@
   
   /* ── Layout ───────────────────────────────────────────── */
   --header-height: 70px;
-  --sidebar-width: 320px;
-  --max-width: 1600px;
+  --sidebar-width: 350px;
+  --max-width: 100%;
 }
 
 /* ── Reset & Base ───────────────────────────────────────── */
@@ -70,7 +70,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 18px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -110,7 +110,8 @@ body {
   z-index: 1;
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 20px;
+  width: 100%;
 }
 
 /* ── Header ─────────────────────────────────────────────── */
@@ -119,13 +120,14 @@ body {
   align-items: center;
   justify-content: space-between;
   height: var(--header-height);
-  padding: 0 24px;
-  background: rgba(17, 17, 20, 0.8);
+  padding: 0 30px;
+  background: rgba(10, 10, 11, 0.95);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .logo {
@@ -293,6 +295,7 @@ body {
   gap: 24px;
   padding: 24px 0;
   min-height: calc(100vh - var(--header-height));
+  align-items: stretch;
 }
 
 /* ── Control Panel ───────────────────────────────────────── */
@@ -304,6 +307,7 @@ body {
   margin-bottom: 20px;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .input-section {
@@ -568,6 +572,8 @@ details.settings-toggle[open] .settings-panel {
   border-radius: var(--radius);
   overflow: hidden;
   min-height: 500px;
+  max-height: 600px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .feed-card.scanning {
@@ -715,8 +721,10 @@ details.settings-toggle[open] .settings-panel {
   border-radius: 6px;
   margin-top: 6px;
   word-break: break-all;
-  max-height: 80px;
+  max-height: 150px;
   overflow-y: auto;
+  visibility: visible;
+  display: block;
 }
 
 .event-result {
@@ -824,12 +832,14 @@ details.settings-toggle[open] .settings-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100%;
 }
 
 .sidebar-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .sidebar-header {
