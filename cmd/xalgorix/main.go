@@ -2,10 +2,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -13,7 +15,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.6.4"
+const version = "0.6.5"
 
 func main() {
 	args := parseArgs()
@@ -43,25 +45,86 @@ func main() {
 
 	if args.update {
 		fmt.Println("Updating xalgorix to latest version...")
-		cmd := exec.Command("go", "install", "github.com/xalgord/xalgorix/cmd/xalgorix@latest")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Env = append(os.Environ(), "GOPROXY=direct")
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		
+		// Get the latest release version from GitHub
+		resp, err := http.Get("https://api.github.com/repos/xalgord/xalgorix/releases/latest")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
 			os.Exit(1)
 		}
+		defer resp.Body.Close()
+		
+		var release struct {
+			TagName string `json:"tag_name"`
+			Assets  []struct {
+				Name string `json:"name"`
+				URL  string `json:"browser_download_url"`
+			} `json:"assets"`
+		}
+		
+		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to parse release info: %v\n", err)
+			os.Exit(1)
+		}
+		
+		// Find the linux amd64 binary
+		var downloadURL string
+		for _, asset := range release.Assets {
+			if strings.Contains(asset.Name, "linux") && strings.Contains(asset.Name, "amd64") {
+				downloadURL = asset.URL
+				break
+			}
+		}
+		
+		if downloadURL == "" {
+			fmt.Fprintln(os.Stderr, "No suitable binary found for this platform")
+			os.Exit(1)
+		}
+		
+		// Download the binary
+		fmt.Printf("Downloading %s...\n", release.TagName)
+		
+		req, _ := http.NewRequest("GET", downloadURL, nil)
+		req.Header.Set("Accept", "application/octet-stream")
+		client := &http.Client{}
+		resp, err = client.Do(req)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		
+		// Write to temp file
+		tmpFile, err := os.CreateTemp("", "xalgorix-*")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create temp file: %v\n", err)
+			os.Exit(1)
+		}
+		defer os.Remove(tmpFile.Name())
+		
+		_, err = io.Copy(tmpFile, resp.Body)
+		tmpFile.Close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to save download: %v\n", err)
+			os.Exit(1)
+		}
+		
+		// Make executable and replace
+		os.Chmod(tmpFile.Name(), 0755)
+		err = os.Rename(tmpFile.Name(), "/usr/local/bin/xalgorix")
+		if err != nil {
+			// If rename fails (same filesystem), copy instead
+			cmd := exec.Command("cp", tmpFile.Name(), "/usr/local/bin/xalgorix")
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to install binary: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		
 		fmt.Println("✅ Updated successfully!")
 		
-		// Find the new binary and show its version
-		goBin := os.Getenv("GOPATH")
-		if goBin == "" {
-			goBin = filepath.Join(os.Getenv("HOME"), "go")
-		}
-		newBin := filepath.Join(goBin, "bin", "xalgorix")
-		
-		// Show the version from the newly installed binary
-		verCmd := exec.Command(newBin, "--version")
+		// Show the new version
+		verCmd := exec.Command("/usr/local/bin/xalgorix", "--version")
 		verCmd.Stdout = os.Stdout
 		verCmd.Stderr = os.Stderr
 		verCmd.Run()
