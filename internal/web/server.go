@@ -28,6 +28,8 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
+const version = "0.6.2"
+
 //go:embed static/*
 var staticFiles embed.FS
 
@@ -301,6 +303,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/queue/status", s.handleQueueStatus)
 	mux.HandleFunc("/api/queue/resume", s.handleQueueResume)
 	mux.HandleFunc("/api/queue/clear", s.handleQueueClear)
+	mux.HandleFunc("/api/version", s.handleVersion)
 
 	// Wrap with rate limiting middleware
 	rlMiddleware := rateLimitMiddleware(s.rateLimiter)
@@ -965,6 +968,14 @@ func (s *Server) handleRateLimit(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleVersion returns the current Xalgorix version
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"version": version,
+	})
 }
 
 // handleQueueStatus returns the current queue state for recovery

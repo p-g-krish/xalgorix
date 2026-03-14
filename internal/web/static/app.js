@@ -957,6 +957,20 @@
     initSeverityCheckboxes();
     connect();
     
+    // Fetch and display version
+    async function loadVersion() {
+        try {
+            const resp = await fetch('/api/version');
+            const data = await resp.json();
+            if (data.version) {
+                document.getElementById('version-display').textContent = data.version;
+            }
+        } catch (e) {
+            console.error('Failed to load version:', e);
+        }
+    }
+    loadVersion();
+    
     // Check server status
     async function checkServerStatus() {
         try {
