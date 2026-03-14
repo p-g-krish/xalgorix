@@ -6,7 +6,6 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-00ff88?style=for-the-badge)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-00ff88?style=for-the-badge&logo=discord)](https://discord.gg/xalgorix)
 
 <p><i>Point it at a target. It does the rest.</i></p>
 
@@ -34,7 +33,7 @@
 
 Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLMs to drive comprehensive security assessments — from reconnaissance to exploitation — using real security tools, with zero human intervention.
 
-> **TL;DR:** Give it a target URL, and Xalgorix will find vulnerabilities, generate a professional PDF report, and optionally DM you on Discord — all automatically.
+> **TL;DR:** Give it a target URL, and Xalgorix will find vulnerabilities, generate a professional PDF report, and send Discord alerts — all automatically.
 
 ---
 
@@ -331,8 +330,7 @@ MIT License — see [LICENSE](LICENSE).
 
 | Resource | URL |
 |----------|-----|
-| 📖 Documentation | [docs.xalgorix.io](https://docs.xalgorix.io) |
-| 💬 Discord | [discord.gg/xalgorix](https://discord.gg/xalgorix) |
+| 📖 Documentation | [docs.xalgorix.com](https://docs.xalgorix.com) |
 | 🐛 Issues | [github.com/xalgord/xalgorix/issues](https://github.com/xalgord/xalgorix/issues) |
 | ☕ Donate | [buymeacoffee.com/xalgord](https://buymeacoffee.com/xalgord) |
 
