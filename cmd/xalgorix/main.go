@@ -16,7 +16,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.7.0"
+const version = "0.7.1"
 
 func main() {
 	args := parseArgs()
@@ -116,7 +116,7 @@ func main() {
 			os.Exit(1)
 		}
 		
-		// Make executable and copy to GOPATH bin
+		// Make executable 
 		os.Chmod(tmpFile.Name(), 0755)
 		
 		// Determine install path - use GOPATH if available
@@ -129,13 +129,16 @@ func main() {
 		// Create bin directory if needed
 		os.MkdirAll(filepath.Join(goPath, "bin"), 0755)
 		
-		// Use sudo to copy if needed
-		cmd := exec.Command("sudo", "cp", tmpFile.Name(), installPath)
+		// First try to remove existing binary (might fail if running)
+		os.Remove(installPath + ".new")
+		
+		// Copy to .new extension first
+		cmd := exec.Command("cp", tmpFile.Name(), installPath+".new")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			// Try without sudo
-			cmd = exec.Command("cp", tmpFile.Name(), installPath)
+			// Try with sudo
+			cmd = exec.Command("sudo", "cp", tmpFile.Name(), installPath+".new")
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
@@ -143,6 +146,9 @@ func main() {
 				os.Exit(1)
 			}
 		}
+		
+		// Rename to actual path (atomic on same filesystem)
+		os.Rename(installPath+".new", installPath)
 		
 		// Ensure it's in PATH - create symlink if needed
 		symlinkPath := "/usr/local/bin/xalgorix"
