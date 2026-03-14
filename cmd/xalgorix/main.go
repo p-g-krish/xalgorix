@@ -16,7 +16,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.7.1"
+const version = "0.7.2"
 
 func main() {
 	args := parseArgs()
@@ -149,13 +149,6 @@ func main() {
 		
 		// Rename to actual path (atomic on same filesystem)
 		os.Rename(installPath+".new", installPath)
-		
-		// Ensure it's in PATH - create symlink if needed
-		symlinkPath := "/usr/local/bin/xalgorix"
-		if _, err := os.Lstat(symlinkPath); err == nil {
-			os.Remove(symlinkPath)
-		}
-		os.Symlink(installPath, symlinkPath)
 		
 		fmt.Println("✅ Updated successfully!")
 		
@@ -343,15 +336,22 @@ func printUsage() {
 
 // handleStart installs and starts xalgorix as a systemd service
 func handleStart() {
+	// Determine install path
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	installPath := filepath.Join(goPath, "bin", "xalgorix")
+	
 	// Check if binary exists
-	if _, err := os.Stat("/usr/local/bin/xalgorix"); os.IsNotExist(err) {
-		fmt.Println("❌ Xalgorix not found at /usr/local/bin/xalgorix")
+	if _, err := os.Stat(installPath); os.IsNotExist(err) {
+		fmt.Printf("❌ Xalgorix not found at %s\n", installPath)
 		fmt.Println("   Install with: xalgorix --update")
 		os.Exit(1)
 	}
 
 	// Create systemd service file
-	serviceContent := `[Unit]
+	serviceContent := fmt.Sprintf(`[Unit]
 Description=Xalgorix - Autonomous AI Pentesting Engine
 After=network.target
 
@@ -359,7 +359,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root
-ExecStart=/usr/local/bin/xalgorix --web
+ExecStart=%s --web
 Restart=always
 RestartSec=10
 
@@ -369,7 +369,7 @@ Environment=XALGORIX_API_BASE=${XALGORIX_API_BASE}
 
 [Install]
 WantedBy=multi-user.target
-`
+`, installPath)
 	// Try to write service file (requires sudo)
 	servicePath := "/etc/systemd/system/xalgorix.service"
 	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)
@@ -418,7 +418,14 @@ func startBackground() {
 		os.Exit(1)
 	}
 
-	startCmd := exec.Command("/usr/local/bin/xalgorix", "--web")
+	// Use GOPATH
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	installPath := filepath.Join(goPath, "bin", "xalgorix")
+	
+	startCmd := exec.Command(installPath, "--web")
 	startCmd.Stdout = logFile
 	startCmd.Stderr = logFile
 	startCmd.Env = os.Environ()
@@ -474,15 +481,22 @@ func handleUninstall() {
 	cmd := exec.Command("pkill", "-f", "xalgorix")
 	cmd.Run()
 	
+	// Determine install path
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	installPath := filepath.Join(goPath, "bin", "xalgorix")
+	
 	// Remove binary
-	if _, err := os.Stat("/usr/local/bin/xalgorix"); err == nil {
-		rmCmd := exec.Command("sudo", "rm", "/usr/local/bin/xalgorix")
+	if _, err := os.Stat(installPath); err == nil {
+		rmCmd := exec.Command("rm", installPath)
 		rmCmd.Stdout = os.Stdout
 		rmCmd.Stderr = os.Stderr
 		if err := rmCmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to remove binary: %v\n", err)
 		} else {
-			fmt.Println("✅ Removed /usr/local/bin/xalgorix")
+			fmt.Printf("✅ Removed %s\n", installPath)
 		}
 	}
 	
