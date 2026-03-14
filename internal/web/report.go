@@ -14,20 +14,17 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 20)
 
-	// Colors
+	// Colors - improved contrast
 	darkBg := [3]int{15, 23, 42}
-	green := [3]int{0, 255, 136}
+	green := [3]int{0, 200, 100} // Darker green for better readability
 	white := [3]int{255, 255, 255}
 	gray := [3]int{148, 163, 184}
-	red := [3]int{239, 68, 68}
-	orange := [3]int{249, 115, 22}
-	amber := [3]int{245, 158, 11}
-	greenLow := [3]int{34, 197, 94}
+	red := [3]int{220, 53, 69}
+	orange := [3]int{220, 120, 50}
+	amber := [3]int{220, 170, 50}
+	greenLow := [3]int{40, 167, 69}
 	cyan := [3]int{6, 182, 212}
 	sectionBg := [3]int{30, 41, 59}
-
-	_ = gray
-	_ = cyan
 
 	// Helper: set text color
 	setColor := func(c [3]int) {
@@ -294,7 +291,7 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 			}
 			pdf.Ln(7)
 
-			// Sections
+			// Sections - only add if content exists
 			type section struct {
 				label   string
 				content string
@@ -302,64 +299,66 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 
 			sections := []section{}
 			if v.Endpoint != "" {
-				sections = append(sections, section{"Endpoint", v.Endpoint})
+				sections = append(sections, section{"ENDPOINT", v.Endpoint})
 			}
 			if v.Description != "" {
-				sections = append(sections, section{"Description", v.Description})
+				sections = append(sections, section{"DESCRIPTION", v.Description})
 			}
 			if v.Impact != "" {
-				sections = append(sections, section{"Impact", v.Impact})
+				sections = append(sections, section{"IMPACT", v.Impact})
 			}
 			if v.TechnicalAnalysis != "" {
-				sections = append(sections, section{"Technical Analysis", v.TechnicalAnalysis})
+				sections = append(sections, section{"TECHNICAL ANALYSIS", v.TechnicalAnalysis})
 			}
 			if v.PoCDescription != "" {
-				sections = append(sections, section{"Proof of Concept", v.PoCDescription})
+				sections = append(sections, section{"PROOF OF CONCEPT", v.PoCDescription})
 			}
 			if v.PoCScript != "" {
-				sections = append(sections, section{"PoC Script", v.PoCScript})
+				sections = append(sections, section{"POC SCRIPT", v.PoCScript})
 			}
 			if v.Remediation != "" {
-				sections = append(sections, section{"Remediation", v.Remediation})
+				sections = append(sections, section{"REMEDIATION", v.Remediation})
 			}
 
 			for _, sec := range sections {
-				if pdf.GetY() > 260 {
+				if pdf.GetY() > 250 {
 					pdf.AddPage()
 					drawRect(0, 0, 210, 297, darkBg)
 					drawRect(0, 0, 210, 1.5, green)
 					pdf.SetY(15)
 				}
 
+				// Section header with dark background for contrast
+				secY := pdf.GetY()
+				drawRect(10, secY, 190, 8, sectionBg)
+				
+				pdf.SetXY(14, secY+1)
 				pdf.SetFont("Helvetica", "B", 8)
 				setColor(green)
-				pdf.SetX(14)
-				pdf.CellFormat(0, 5, strings.ToUpper(sec.label), "", 1, "L", false, 0, "")
+				pdf.CellFormat(0, 6, sec.label, "", 0, "L", false, 0, "")
+				
+				pdf.SetY(secY + 9)
 
-				pdf.SetFont("Helvetica", "", 8)
-				if sec.label == "PoC Script" || sec.label == "Endpoint" {
+				// Content
+				pdf.SetFont("Helvetica", "", 9)
+				if sec.label == "POC SCRIPT" || sec.label == "ENDPOINT" {
 					// Code-style content
 					codeY := pdf.GetY()
 					content := sec.content
-					if len(content) > 1500 {
-						content = content[:1500] + "\n... (truncated)"
+					if len(content) > 1200 {
+						content = content[:1200] + "\n... (truncated)"
 					}
-					lines := pdf.SplitLines([]byte(content), 175)
-					blockH := float64(len(lines))*4 + 6
-					if blockH > 80 {
-						blockH = 80
-					}
-					drawRect(14, codeY, 182, blockH, [3]int{10, 15, 30})
+					drawRect(14, codeY, 182, 25, [3]int{20, 25, 40})
 					pdf.SetXY(17, codeY+3)
 					pdf.SetFont("Courier", "", 7)
 					setColor(cyan)
-					pdf.MultiCell(175, 3.5, content, "", "L", false)
+					pdf.MultiCell(175, 4, content, "", "L", false)
 				} else {
 					setColor(white)
 					pdf.SetX(14)
-					pdf.MultiCell(182, 4, sec.content, "", "L", false)
+					pdf.MultiCell(182, 5, sec.content, "", "L", false)
 				}
-				pdf.Ln(2)
+				pdf.Ln(4)
 			}
 
 			// Separator between vulns
@@ -372,28 +371,15 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	}
 
 	// ─── TESTED ENDPOINTS ─────────────────────────────────
-	pdf.AddPage()
-	drawRect(0, 0, 210, 297, darkBg)
-	drawRect(0, 0, 210, 1.5, green)
-
-	pdf.SetY(15)
-	pdf.SetFont("Helvetica", "B", 22)
-	setColor(green)
-	pdf.CellFormat(190, 12, "Tested Endpoints & URLs", "", 1, "L", false, 0, "")
-	drawRect(10, pdf.GetY()+2, 50, 0.8, green)
-	pdf.Ln(8)
-
-	// Extract unique endpoints from events
+	// Only add if there are endpoints
 	endpointSet := make(map[string]bool)
 	var endpoints []string
 	for _, evt := range scan.Events {
 		if evt.Type == "tool_call" && evt.ToolName == "terminal_execute" {
-			// Try to extract URLs from commands
 			if strings.Contains(evt.ToolArgs["command"], "http") {
 				lines := strings.Split(evt.ToolArgs["command"], "\n")
 				for _, line := range lines {
 					if strings.Contains(line, "http://") || strings.Contains(line, "https://") {
-						// Extract URL
 						for _, word := range strings.Fields(line) {
 							if strings.Contains(word, "http") {
 								u := extractURL(word)
@@ -410,12 +396,23 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	}
 
 	if len(endpoints) > 0 {
+		pdf.AddPage()
+		drawRect(0, 0, 210, 297, darkBg)
+		drawRect(0, 0, 210, 1.5, green)
+
+		pdf.SetY(15)
+		pdf.SetFont("Helvetica", "B", 22)
+		setColor(green)
+		pdf.CellFormat(190, 12, "Tested Endpoints & URLs", "", 1, "L", false, 0, "")
+		drawRect(10, pdf.GetY()+2, 50, 0.8, green)
+		pdf.Ln(8)
+
 		pdf.SetFont("Helvetica", "", 9)
 		setColor(white)
-		// Show first 50 endpoints
+		// Show first 30 endpoints
 		displayEndpoints := endpoints
-		if len(displayEndpoints) > 50 {
-			displayEndpoints = displayEndpoints[:50]
+		if len(displayEndpoints) > 30 {
+			displayEndpoints = displayEndpoints[:30]
 		}
 		for _, ep := range displayEndpoints {
 			if pdf.GetY() > 265 {
@@ -428,55 +425,12 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 			setColor(cyan)
 			pdf.CellFormat(190, 5, "• "+ep, "", 1, "L", false, 0, "")
 		}
-		if len(endpoints) > 50 {
+		if len(endpoints) > 30 {
 			pdf.Ln(2)
 			pdf.SetFont("Helvetica", "", 9)
 			setColor(gray)
-			pdf.CellFormat(190, 5, fmt.Sprintf("... and %d more endpoints", len(endpoints)-50), "", 1, "L", false, 0, "")
+			pdf.CellFormat(190, 5, fmt.Sprintf("... and %d more endpoints", len(endpoints)-30), "", 1, "L", false, 0, "")
 		}
-	} else {
-		pdf.SetFont("Helvetica", "", 10)
-		setColor(gray)
-		pdf.CellFormat(190, 8, "No specific endpoints extracted from scan.", "", 1, "L", false, 0, "")
-	}
-
-	// ─── METHODOLOGY ──────────────────────────────────────
-	pdf.AddPage()
-	drawRect(0, 0, 210, 297, darkBg)
-	drawRect(0, 0, 210, 1.5, green)
-
-	pdf.SetY(15)
-	pdf.SetFont("Helvetica", "B", 22)
-	setColor(green)
-	pdf.CellFormat(190, 12, "Methodology Applied", "", 1, "L", false, 0, "")
-	drawRect(10, pdf.GetY()+2, 50, 0.8, green)
-	pdf.Ln(10)
-
-	methodologies := []string{
-		"1. Information Gathering & Reconnaissance",
-		"2. Subdomain Enumeration & Asset Discovery",
-		"3. Port Scanning & Service Identification",
-		"4. Technology Fingerprinting",
-		"5. Directory & File Enumeration",
-		"6. Vulnerability Scanning (Automated + Manual)",
-		"7. SSL/TLS Security Assessment",
-		"8. Authentication & Authorization Testing",
-		"9. Injection Testing (SQLi, XSS, Command Injection, etc.)",
-		"10. Business Logic Testing",
-		"11. API Security Testing",
-		"12. Manual Verification of Findings",
-	}
-
-	pdf.SetFont("Helvetica", "", 11)
-	for _, m := range methodologies {
-		if pdf.GetY() > 260 {
-			pdf.AddPage()
-			drawRect(0, 0, 210, 297, darkBg)
-			drawRect(0, 0, 210, 1.5, green)
-			pdf.SetY(15)
-		}
-		setColor(white)
-		pdf.CellFormat(190, 8, m, "", 1, "L", false, 0, "")
 	}
 
 	// ─── DISCLAIMER ──────────────────────────────────────
@@ -510,21 +464,9 @@ IMPORTANT NOTICES:
 Generated by Xalgorix - Autonomous AI Pentesting Engine
 https://github.com/xalgord/xalgorix`
 
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont("Helvetica", "", 10)
 	setColor(white)
 	pdf.MultiCell(182, 5, disclaimer, "", "L", false)
-
-	// ─── FOOTER ON ALL PAGES ───────────────────────────────
-	totalPages := pdf.PageCount()
-	for i := 1; i <= totalPages; i++ {
-		pdf.SetPage(i)
-		drawRect(0, 285, 210, 12, [3]int{10, 15, 30})
-		pdf.SetXY(10, 287)
-		pdf.SetFont("Helvetica", "", 7)
-		setColor(gray)
-		pdf.CellFormat(95, 5, "Xalgorix — Autonomous AI Pentesting Engine", "", 0, "L", false, 0, "")
-		pdf.CellFormat(95, 5, fmt.Sprintf("Page %d of %d", i, totalPages), "", 0, "R", false, 0, "")
-	}
 
 	// Save PDF
 	filename := fmt.Sprintf("xalgorix_report_%s.pdf", scan.ID)
@@ -539,12 +481,10 @@ https://github.com/xalgord/xalgorix`
 
 // extractURL extracts a clean URL from a string
 func extractURL(s string) string {
-	// Find the start of URL
 	start := strings.Index(s, "http")
 	if start == -1 {
 		return ""
 	}
-	// Find the end of URL (space, quote, or common delimiters)
 	end := len(s)
 	delimiters := []string{" ", "\"", "'", ">", "<", "|", "\n", "\r", "&", "?"}
 	for _, d := range delimiters {
@@ -552,10 +492,8 @@ func extractURL(s string) string {
 			end = start + idx
 		}
 	}
-	// Trim and return
 	url := s[start:end]
 	url = strings.TrimSpace(url)
-	// Remove trailing punctuation
 	url = strings.TrimRight(url, ".,;:!)]}>")
 	return url
 }
