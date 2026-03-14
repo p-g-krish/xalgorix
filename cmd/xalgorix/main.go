@@ -12,7 +12,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.5.2"
+const version = "0.5.3"
 
 func main() {
 	args := parseArgs()
@@ -51,8 +51,16 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("✅ Updated successfully!")
-		// Show the version we updated to
-		verCmd := exec.Command("xalgorix", "--version")
+		
+		// Find the new binary and show its version
+		goBin := os.Getenv("GOPATH")
+		if goBin == "" {
+			goBin = filepath.Join(os.Getenv("HOME"), "go")
+		}
+		newBin := filepath.Join(goBin, "bin", "xalgorix")
+		
+		// Show the version from the newly installed binary
+		verCmd := exec.Command(newBin, "--version")
 		verCmd.Stdout = os.Stdout
 		verCmd.Stderr = os.Stderr
 		verCmd.Run()
