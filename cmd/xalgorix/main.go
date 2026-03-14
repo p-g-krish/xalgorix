@@ -16,7 +16,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.7.3"
+const version = "0.7.4"
 
 func main() {
 	args := parseArgs()
@@ -350,7 +350,7 @@ func handleStart() {
 		os.Exit(1)
 	}
 
-	// Create systemd service file
+	// Create systemd service file - source the env file
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Xalgorix - Autonomous AI Pentesting Engine
 After=network.target
@@ -360,13 +360,9 @@ Type=simple
 User=root
 WorkingDirectory=/root
 Environment="PATH=%s/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=%s --web
+ExecStart=/bin/bash -c 'source /root/.xalgorix.env && %s --web'
 Restart=always
 RestartSec=10
-
-Environment=XALGORIX_LLM=${XALGORIX_LLM}
-Environment=XALGORIX_API_KEY=${XALGORIX_API_KEY}
-Environment=XALGORIX_API_BASE=${XALGORIX_API_BASE}
 
 [Install]
 WantedBy=multi-user.target
@@ -426,7 +422,8 @@ func startBackground() {
 	}
 	installPath := filepath.Join(goPath, "bin", "xalgorix")
 	
-	startCmd := exec.Command(installPath, "--web")
+	// Start via bash to source env file
+	startCmd := exec.Command("/bin/bash", "-c", "source /root/.xalgorix.env && "+installPath+" --web")
 	startCmd.Stdout = logFile
 	startCmd.Stderr = logFile
 	startCmd.Env = os.Environ()
