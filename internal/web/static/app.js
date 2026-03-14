@@ -325,7 +325,8 @@
     function renderMessage(content) {
         const el = document.createElement('div');
         el.className = 'event event-message';
-        el.textContent = content;
+        // Render markdown in messages
+        el.innerHTML = mdToHtml(content);
         return el;
     }
 
