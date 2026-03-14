@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -12,7 +13,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.5.3"
+const version = "0.5.4"
 
 func main() {
 	args := parseArgs()
