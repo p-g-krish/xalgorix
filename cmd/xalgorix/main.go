@@ -17,7 +17,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.8.8"
+const version = "0.8.9"
 
 func main() {
 	args := parseArgs()
@@ -350,6 +350,14 @@ func handleStart() {
 		fmt.Println("   Install with: xalgorix --update")
 		os.Exit(1)
 	}
+
+	// Kill any existing xalgorix processes first
+	exec.Command("pkill", "-f", "xalgorix.*--web").Run()
+	time.Sleep(1 * time.Second)
+	
+	// Also kill anything using port 1337
+	exec.Command("fuser", "-k", "1337/tcp").Run()
+	time.Sleep(1 * time.Second)
 
 	// Create systemd service file
 	serviceContent := fmt.Sprintf(`[Unit]
