@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	netURL "net/url"
 	"strings"
 	"time"
 
@@ -108,11 +108,13 @@ func formatResults(query string, results []searchResult) tools.Result {
 
 // searchBrave scrapes Brave Search results
 func searchBrave(query string, max int) ([]searchResult, error) {
-	url := fmt.Sprintf("https://search.brave.com/search?q=%s&source=web", url.QueryEscape(query))
+	// Try Brave's JSON API (more reliable)
+	url := fmt.Sprintf("https://search.brave.com/api/search?q=%s&count=%d", netURL.QueryEscape(query), max)
 	
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Accept", "application/json")
 	
 	resp, err := client.Do(req)
 	if err != nil {
@@ -120,26 +122,34 @@ func searchBrave(query string, max int) ([]searchResult, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("brave API returned %d", resp.StatusCode)
+	}
+
 	body, _ := io.ReadAll(resp.Body)
-	html := string(body)
+	
+	var brave struct {
+		WebResults []struct {
+			Title string `json:"title"`
+			URL   string `json:"url"`
+			Desc  string `json:"description"`
+		} `json:"web"`
+	}
+	
+	if err := json.Unmarshal(body, &brave); err != nil {
+		return nil, err
+	}
 
 	var results []searchResult
-	
-	// Parse Brave search results
-	parts := strings.Split(html, `class="snippet"`)
-	for _, part := range parts {
-		idx := strings.Index(part, "href=\"")
-		if idx > 0 && idx < 100 {
-			urlEnd := strings.Index(part[idx+6:], "\"")
-			if urlEnd > 0 {
-				results = append(results, searchResult{
-					URL: part[idx+6 : idx+6+urlEnd],
-				})
-			}
-		}
+	for _, r := range brave.WebResults {
 		if len(results) >= max {
 			break
 		}
+		results = append(results, searchResult{
+			Title:   r.Title,
+			URL:     r.URL,
+			Snippet: r.Desc,
+		})
 	}
 
 	return results, nil
@@ -147,7 +157,7 @@ func searchBrave(query string, max int) ([]searchResult, error) {
 
 // searchGoogle scrapes Google search results
 func searchGoogle(query string, max int) ([]searchResult, error) {
-	url := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d", url.QueryEscape(query), max)
+	url := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d", netURL.QueryEscape(query), max)
 	
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
@@ -193,7 +203,7 @@ func searchGoogle(query string, max int) ([]searchResult, error) {
 
 // searchBing scrapes Bing search results
 func searchBing(query string, max int) ([]searchResult, error) {
-	url := fmt.Sprintf("https://www.bing.com/search?q=%s&count=%d", url.QueryEscape(query), max)
+	url := fmt.Sprintf("https://www.bing.com/search?q=%s&count=%d", netURL.QueryEscape(query), max)
 	
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
@@ -232,9 +242,55 @@ func searchBing(query string, max int) ([]searchResult, error) {
 
 // searchDuckDuckGo uses the HTML version
 func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
-	url := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+	// Try JSON API first (more reliable)
+	url := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", netURL.QueryEscape(query))
 	
 	resp, err := http.Get(url)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			body, _ := io.ReadAll(resp.Body)
+			
+			var ddg struct {
+				AbstractText string `json:"AbstractText"`
+				AbstractURL  string `json:"AbstractURL"`
+				Results      []struct {
+					Text string `json:"Text"`
+					URL  string `json:"URL"`
+				} `json:"RelatedTopics"`
+			}
+			
+			json.Unmarshal(body, &ddg)
+			
+			var results []searchResult
+			if ddg.AbstractText != "" {
+				results = append(results, searchResult{
+					Title:   ddg.AbstractText[:min(100, len(ddg.AbstractText))],
+					URL:     ddg.AbstractURL,
+					Snippet: ddg.AbstractText,
+				})
+			}
+			
+			for _, r := range ddg.Results {
+				if len(results) >= max {
+					break
+				}
+				results = append(results, searchResult{
+					Title:   r.Text,
+					URL:     r.URL,
+				})
+			}
+			
+			if len(results) > 0 {
+				return results, nil
+			}
+		}
+	}
+	
+	// Fallback to HTML scraping
+	url = fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", netURL.QueryEscape(query))
+	
+	resp, err = http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +341,7 @@ func cveSearch(args map[string]string) (tools.Result, error) {
 		cveID = "CVE-" + cveID
 	}
 
-	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=%s", url.QueryEscape(cveID))
+	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=%s", netURL.QueryEscape(cveID))
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
@@ -385,7 +441,7 @@ func exploitSearch(args map[string]string) (tools.Result, error) {
 	b.WriteString("To search locally, install Exploit-DB:\n")
 	b.WriteString("  sudo apt update && sudo apt install exploitdb\n")
 	b.WriteString("  searchsploit " + query + "\n\n")
-	b.WriteString("Online search: https://www.exploit-db.com/search?q=" + url.QueryEscape(query))
+	b.WriteString("Online search: https://www.exploit-db.com/search?q=" + netURL.QueryEscape(query))
 
 	return tools.Result{Output: b.String()}, nil
 }
