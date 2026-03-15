@@ -286,6 +286,8 @@ body {
   background: var(--bg-tertiary);
   border-radius: 6px;
   letter-spacing: 1px;
+  min-width: 70px;
+  text-align: center;
 }
 
 /* ── Main Content ───────────────────────────────────────── */
