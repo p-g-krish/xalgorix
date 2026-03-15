@@ -149,9 +149,38 @@ func CheckEnvFile() error {
 		return fmt.Errorf("configuration file not found: %s\n\nPlease create it with:\n  XALGORIX_LLM=minimax/MiniMax-M2.5\n  XALGORIX_API_KEY=your_api_key\n\nOr run: xalgorix --setup", envPath)
 	}
 
-	// File exists, check if it has required variables
-	cfg := Get()
-	if cfg.LLM == "" || cfg.APIKey == "" {
+	// Read file directly to check for required variables (not system env vars)
+	llm := ""
+	apiKey := ""
+	
+	f, err := os.Open(envPath)
+	if err != nil {
+		return fmt.Errorf("cannot read config file: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		
+		if key == "XALGORIX_LLM" {
+			llm = value
+		} else if key == "XALGORIX_API_KEY" {
+			apiKey = value
+		}
+	}
+
+	if llm == "" || apiKey == "" {
 		return fmt.Errorf("configuration file is invalid or missing required variables\n\nPlease add to %s:\n  XALGORIX_LLM=minimax/MiniMax-M2.5\n  XALGORIX_API_KEY=your_api_key", envPath)
 	}
 
