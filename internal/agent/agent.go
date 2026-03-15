@@ -474,14 +474,11 @@ nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t exposures/ -t misconfig
 # If subdomains found:
 nuclei -l ~/xalgorix-data/live_hosts.txt -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -severity critical,high,medium -o ~/xalgorix-data/nuclei_subs.txt -stats -rl 30
 
-# Nikto
-nikto -h https://TARGET -C all -Tuning x -o ~/xalgorix-data/nikto.txt -Format txt
-
 # Nmap vuln scripts
 nmap --script vuln -p 80,443,8080,8443 TARGET -oN ~/xalgorix-data/nmap_vuln.txt
 ` + "`" + `
 
-**AFTER SCANNING**: Review every nuclei/nikto/nmap finding. For each one, manually verify it and report_vulnerability.
+**AFTER SCANNING**: Review every nuclei/nmap finding. For each one, manually verify it and report_vulnerability.
 
 ---
 
