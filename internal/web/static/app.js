@@ -979,6 +979,21 @@
     initSeverityCheckboxes();
     connect();
     
+    // Polling fallback - check status every 5 seconds in case WebSocket fails
+    setInterval(async () => {
+        try {
+            const resp = await fetch('/api/status');
+            const status = await resp.json();
+            if (status.running && !scanRunning) {
+                // Scan started while we were disconnected - reload page
+                location.reload();
+            } else if (!status.running && scanRunning) {
+                // Scan finished while we were disconnected - reload to show results
+                location.reload();
+            }
+        } catch (e) {}
+    }, 5000);
+    
     // Fetch and display version
     async function loadVersion() {
         try {
