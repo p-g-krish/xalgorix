@@ -583,17 +583,8 @@
             const m = Math.floor((elapsed % 3600) / 60);
             const s = elapsed % 60;
             
-            let timeStr;
-            if (h > 0) {
-                // 1+ hours: HH:MM:SS
-                timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-            } else if (m > 0) {
-                // 1-59 minutes: MM:SS
-                timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-            } else {
-                // Under 1 minute: Xs
-                timeStr = `${s}s`;
-            }
+            // Always show HH:MM:SS format
+            const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
             document.getElementById('live-clock').textContent = timeStr;
         } else {
             // Show time of day when idle
