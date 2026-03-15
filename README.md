@@ -48,6 +48,7 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | 🔒 **Safety First** | Blocks destructive commands, encoding bypass detection |
 | 🔌 **Circuit Breaker** | Auto-blocks failing tools after 5 attempts |
 | 🌐 **Web UI** | Dark mode dashboard with live feed & token tracking |
+| 💬 **Chat During Scan** | Send messages to agent while scan is running |
 | 🌐 **Browser + Caido** | Playwright/Chromium with Caido proxy integration |
 | 📱 **Mobile Ready** | Works on phones & tablets |
 | 💾 **Scan Persistence** | Resume interrupted scans after restart |
@@ -56,6 +57,10 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | 🔧 **Auto-Install** | 70+ tool→package mappings |
 | 🧠 **Multi-LLM** | OpenAI, Anthropic, DeepSeek, MiniMax, Groq, Ollama |
 | 🔐 **Authentication** | Optional login protection for dashboard |
+| 🔍 **CVE Search** | Query NIST NVD database for CVE details |
+| 🐛 **Exploit Search** | Search Exploit-DB for public exploits |
+| 🔎 **Web Search** | Google, Bing, Brave, DuckDuckGo integration |
+| ✅ **Tool Pre-Check** | Auto-installs missing tools before running |
 
 ---
 
