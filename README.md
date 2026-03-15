@@ -131,11 +131,83 @@ XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
 
 ```bash
 # Web UI (recommended)
-sudo xalgorix --web
+xalgorix --web
 
 # Or CLI
-sudo xalgorix --target https://example.com
+xalgorix --target https://example.com
 ```
+
+---
+
+## 📖 Command Reference
+
+### CLI Flags
+
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--web` | `-w` | Launch the Web UI dashboard |
+| `--port` | `-p` | Web UI port (default: 1337) |
+| `--target` | `-t` | Target URL, IP, or local path (repeatable) |
+| `--instruction` | `-i` | Custom instructions for the agent |
+| `--model` | `-m` | LLM model (overrides XALGORIX_LLM) |
+| `--update` | `-up` | Update to latest version |
+| `--version` | `-v` | Show version |
+| `--start` | — | Install and start as systemd service |
+| `--stop` | — | Stop the service |
+| `--restart` | — | Restart the service |
+| `--uninstall` | — | Remove from system |
+| `--help` | `-h` | Show help |
+
+### Environment Variables
+
+#### Required
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `XALGORIX_LLM` | Model name | `minimax/MiniMax-M2.5`, `openai/gpt-4o`, `anthropic/claude-sonnet` |
+| `XALGORIX_API_KEY` | API key | `sk-...` |
+| `XALGORIX_API_BASE` | API base URL | `https://api.minimax.io/`, `https://api.openai.com/` |
+
+#### Optional - Model Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XALGORIX_REASONING_EFFORT` | `high` | Reasoning effort: `low`, `medium`, `high` |
+| `XALGORIX_LLM_MAX_RETRIES` | `5` | Max retries on API failure |
+| `XALGORIX_MEMORY_COMPRESSOR_TIMEOUT` | `60` | Context compression timeout (seconds) |
+| `XALGORIX_MAX_ITERATIONS` | `0` | Max iterations (0 = unlimited) |
+
+#### Optional - Integrations
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `XALGORIX_DISCORD_WEBHOOK` | Discord webhook for alerts | `https://discord.com/api/webhooks/...` |
+| `XALGORIX_USERNAME` | Dashboard username (enables auth) | `admin` |
+| `XALGORIX_PASSWORD` | Dashboard password | `secret123` |
+
+#### Optional - Rate Limiting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XALGORIX_RATE_LIMIT_REQUESTS` | `60` | Requests per window |
+| `XALGORIX_RATE_LIMIT_WINDOW` | `60` | Window in seconds |
+
+#### Optional - Browser
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XALGORIX_DISABLE_BROWSER` | `false` | Set to `true` to disable browser automation |
+
+### Supported Models
+
+Xalgorix supports multiple LLM providers:
+
+- **MiniMax** — `minimax/MiniMax-M2.5`, `minimax/MiniMax-Text-01`
+- **OpenAI** — `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o1-preview`
+- **Anthropic** — `anthropic/claude-sonnet`, `anthropic/claude-opus`
+- **DeepSeek** — `deepseek/chat`
+- **Groq** — `groq/llama-3.1-70b`
+- **Ollama** — `ollama/llama3`, `ollama/codellama`
 
 ---
 
