@@ -6,6 +6,7 @@ import (
 	"bytes"
 	cryptorand "crypto/rand"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.8.0"
+const version = "0.8.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -243,6 +244,8 @@ type Server struct {
 	discordWebhook string
 	liveScanRecord *ScanRecord
 	rateLimiter    *RateLimiter
+	username       string
+	password       string
 }
 
 // NewServer creates a new web server.
@@ -251,6 +254,11 @@ func NewServer(cfg *config.Config, port int) *Server {
 	dataDir := filepath.Join(home, "xalgorix-data", "scans")
 	// Rate limit from config (defaults: 60 requests per minute)
 	rl := NewRateLimiter(cfg.RateLimitRequests, time.Duration(cfg.RateLimitWindow)*time.Second)
+	
+	// Load auth credentials from environment
+	username := os.Getenv("XALGORIX_USERNAME")
+	password := os.Getenv("XALGORIX_PASSWORD")
+	
 	return &Server{
 		cfg:            cfg,
 		port:           port,
@@ -258,6 +266,8 @@ func NewServer(cfg *config.Config, port int) *Server {
 		dataDir:        dataDir,
 		discordWebhook: os.Getenv("XALGORIX_DISCORD_WEBHOOK"),
 		rateLimiter:    rl,
+		username:       username,
+		password:       password,
 	}
 }
 
@@ -268,6 +278,71 @@ func (s *Server) Start() error {
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return fmt.Errorf("failed to load static files: %w", err)
+	}
+
+	// Auth middleware - wraps handler to require login
+	authMiddleware := func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip auth if not configured
+			if s.username == "" || s.password == "" {
+				handler.ServeHTTP(w, r)
+				return
+			}
+			
+			// Check for auth cookie
+			cookie, err := r.Cookie("xalgorix_auth")
+			if err == nil && cookie.Value == s.username+":"+s.password {
+				handler.ServeHTTP(w, r)
+				return
+			}
+			
+			// Check Basic Auth header
+			auth := r.Header.Get("Authorization")
+			if auth != "" {
+				// Simple Basic Auth check
+				encoded := strings.TrimPrefix(auth, "Basic ")
+				decoded, err := base64.StdEncoding.DecodeString(encoded)
+				if err == nil {
+					creds := string(decoded)
+					if creds == s.username+":"+s.password {
+						handler.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+			
+			// Return 401 with login page
+			w.Header().Set("WWW-Authenticate", `Basic realm="Xalgorix"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+<title>Xalgorix - Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#1e293b;padding:2rem;border-radius:12px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);width:100%;max-width:400px}
+h1{color:#00c896;margin-bottom:1.5rem;font-size:1.5rem}
+input{width:100%;padding:12px;margin-bottom:1rem;background:#334155;border:1px solid #475569;border-radius:6px;color:#fff;font-size:1rem}
+input:focus{outline:none;border-color:#00c896}
+button{width:100%;padding:12px;background:#00c896;color:#0f172a;font-weight:600;border:none;border-radius:6px;cursor:pointer;font-size:1rem}
+button:hover{background:#00b087}
+.error{color:#ef4444;margin-bottom:1rem;font-size:0.875rem}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>🔒 Xalgorix Login</h1>
+<form method="POST" action="/api/login">
+<input type="text" name="username" placeholder="Username" required>
+<input type="password" name="password" placeholder="Password" required>
+<button type="submit">Login</button>
+</form>
+</div>
+</body>
+</html>`))
+		})
 	}
 
 	mux := http.NewServeMux()
@@ -305,15 +380,19 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/queue/clear", s.handleQueueClear)
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/stop-notify", s.handleStopNotify)
+	mux.HandleFunc("/api/login", s.handleLogin)
 
-	// Wrap with rate limiting middleware
+	// Wrap with auth then rate limiting middleware
 	rlMiddleware := rateLimitMiddleware(s.rateLimiter)
 	
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("Xalgorix Web UI → http://localhost:%d", s.port)
 	log.Printf("Scan data → %s", s.dataDir)
 	log.Printf("Rate limiting: %d requests/%ds per IP", s.cfg.RateLimitRequests, s.cfg.RateLimitWindow)
-	return http.ListenAndServe(addr, rlMiddleware(mux))
+	if s.username != "" && s.password != "" {
+		log.Printf("🔐 Authentication enabled")
+	}
+	return http.ListenAndServe(addr, rlMiddleware(authMiddleware(mux)))
 }
 
 // initDataDir creates the data directory and cleans up old scans (>30 days).
@@ -989,6 +1068,34 @@ func (s *Server) handleStopNotify(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	json.NewEncoder(w).Encode(map[string]string{"status": "notified"})
+}
+
+// handleLogin processes login form submission
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	
+	if username == s.username && password == s.password {
+		// Set auth cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "xalgorix_auth",
+			Value:    username + ":" + password,
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   86400 * 7, // 7 days
+		})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid credentials"})
+	}
 }
 
 // handleQueueStatus returns the current queue state for recovery
