@@ -411,6 +411,13 @@ const defaultChecklist = `
 ⚠️ DONT STOP AT FIRST FIND - Continue testing until ALL phases complete
 ⚠️ BE THOROUGH - Missing one vuln could be the difference between safe and compromised
 
+## TIME ALLOCATION - CRITICAL!
+**SPEND 70% OF TIME ON RECON PHASE!**
+The more you discover in reconnaissance, the more attack surface you have to test!
+- 70% = Recon (find everything!)
+- 20% = Vulnerability scanning
+- 10% = Exploitation & reporting
+
 ## THINKING FRAMEWORK (apply before every phase)
 1. What is the attack surface? (domains, subdomains, ports, endpoints, parameters, APIs)
 2. What technology stack is running? (server, framework, CMS, database, CDN, WAF)
@@ -422,9 +429,189 @@ const defaultChecklist = `
 
 ---
 
+1. What is the attack surface? (domains, subdomains, ports, endpoints, parameters, APIs)
+2. What technology stack is running? (server, framework, CMS, database, CDN, WAF)
+3. What are the highest-impact vulns for this stack? (e.g., Joomla → CVE-2023-23752, WordPress → wp-admin brute + plugin RCE)
+4. What did previous phases reveal? Use add_note/read_notes to track and chain findings.
+5. What haven't I tested yet? Go back and test it.
+6. Did I try multiple tools for the same test? If one fails, try another!
+7. Did I verify each finding manually? Automated tools can have false positives.
+
+---
+
 ### PHASE 1: Deep Reconnaissance & Attack Surface Mapping
-**Goal: Map EVERYTHING — subdomains, ports, services, endpoints, parameters, tech stack.**
-**MUST COMPLETE THIS PHASE FULLY BEFORE MOVING ON - Do not skip subdomain enumeration!**
+**GOAL: COMPREHENSIVE MAPPING - Spend 70% of time here!**
+**The more you find here, the more attack surface you can test later!**
+**MUST COMPLETE THIS PHASE FULLY BEFORE MOVING ON - Do not skip!**
+
+## 1A: PASSIVE RECON (No direct contact with target - uses third-party sources)
+` + "`" + `bash` + "`" + `
+# DNS & Subdomain Enumeration (PASSIVE - no direct target contact)
+# Use multiple passive sources for comprehensive coverage
+
+# Certificate Transparency logs
+curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ~/xalgorix-data/passive_crt.txt
+
+# DNS aggregators (passive)
+subfinder -d TARGET -passive -o ~/xalgorix-data/passive_subfinder.txt
+findomain -t TARGET --output ~/xalgorix-data/passive_findomain.txt 2>/dev/null || true
+assetfinder --subs-only TARGET | tee ~/xalgorix-data/passive_assetfinder.txt
+
+# Passive DNS aggregation
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ~/xalgorix-data/passive_dnsbufferover.txt
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ~/xalgorix-data/passive_dnsbufferover.txt
+
+# Shodan DNS enumeration (if API key available)
+# shodan dns subdomain TARGET 2>/dev/null || true
+
+# Bing.com DNS search (passive)
+# Use search engines to find subdomains
+curl -s "https://www.bing.com/search?q=site:target.com" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ~/xalgorix-data/passive_bing.txt
+
+# Google DNS enumeration (passive)
+# Use Google to find subdomains
+curl -s "https://www.google.com/search?q=site:target.com&num=500" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ~/xalgorix-data/passive_google.txt
+
+# Merge all passive sources
+cat ~/xalgorix-data/passive_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_passive_subdomains.txt
+wc -l ~/xalgorix-data/all_passive_subdomains.txt
+
+# Archive enumeration (PASSIVE - using historical data)
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ~/xalgorix-data/archive_subdomains.txt
+
+# GitHub Dorks (find exposed secrets, APIs, infrastructure)
+# Use GitHub search to find target-related repos
+# gh search code "TARGET" --owner --repo --match --json --limit 100 2>/dev/null || true
+
+# Pastebin/Defcon/Dumpster search
+curl -s "https://duckduckgo.com/html/?q=TARGET+password&ia=web" | grep -oP 'href="https?://[^"]+' | head -20 || true
+
+# DNS Dumpster
+curl -s "https://dnsdumpster.com/domain/TARGET/" | grep -oP 'href="https?://[^"]+' | grep TARGET | sort -u || true
+
+# Passive subdomain takeovers check
+curl -s "https://subdomain-takeover.cybersploit.com/subdomains/TARGET.json" 2>/dev/null || true
+
+## 1B: ACTIVE RECON (Direct contact with target)
+` + "`" + `bash` + "`" + `
+# Active subdomain enumeration
+subfinder -d TARGET -all -recursive -o ~/xalgorix-data/active_subfinder.txt
+# Use wordlists for brute-force
+subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
+amass enum -d TARGET -active -o ~/xalgorix-data/active_amass.txt 2>/dev/null || true
+
+# Merge ALL subdomains (passive + active)
+cat ~/xalgorix-data/all_passive_subdomains.txt ~/xalgorix-data/active_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_subdomains.txt
+wc -l ~/xalgorix-data/all_subdomains.txt
+
+# DNS Resolution - verify which subdomains are alive
+cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -a -resp -o ~/xalgorix-data/dns_resolved.txt
+cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -aaaa -resp -o ~/xalgorix-data/dns_resolved_ipv6.txt 2>/dev/null || true
+cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -mx -resp -o ~/xalgorix-data/dns_mx.txt 2>/dev/null || true
+cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -txt -resp -o ~/xalgorix-data/dns_txt.txt 2>/dev/null || true
+cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -ns -resp -o ~/xalgorix-data/dns_ns.txt 2>/dev/null || true
+
+# HTTP Probing - check which hosts are live and get info
+cat ~/xalgorix-data/all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ~/xalgorix-data/live_hosts.txt
+cat ~/xalgorix-data/live_hosts.txt | grep -E "^\[.*\]" | cut -d' ' -f1 > ~/xalgorix-data/live_urls.txt
+wc -l ~/xalgorix-data/live_hosts.txt
+
+# Port Scanning - comprehensive
+nmap -sV -sC -T4 -A -p- --open -oN ~/xalgorix-data/nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
+nmap -sU -T4 --top-ports 200 -oN ~/xalgorix-data/nmap_udp.txt TARGET
+
+# Technology fingerprinting
+whatweb -v -a 3 https://TARGET 2>/dev/null
+wappalyzer https://TARGET 2>/dev/null || true
+curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ~/xalgorix-data/headers.txt
+
+# WAF detection
+wafw00f https://TARGET -a
+
+## 1C: WEB CRAWLING & URL DISCOVERY
+` + "`" + `bash` + "`" + `
+# Crawling & URL discovery (use ALL tools, merge results)
+gospider -s https://TARGET --depth 3 -o ~/xalgorix-data/gospider/ 2>/dev/null
+katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ~/xalgorix-data/katana_urls.txt 2>/dev/null
+hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ~/xalgorix-data/hakrawler.txt
+
+# URL & archive mining (use ALL tools, merge results)
+gau TARGET --threads 5 --o ~/xalgorix-data/gau_urls.txt
+waymore -i TARGET -mode U -oU ~/xalgorix-data/waymore_urls.txt 2>/dev/null
+waybackurls TARGET | sort -u | tee ~/xalgorix-data/wayback_urls.txt
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original" | jq -r '.[].original' 2>/dev/null | sort -u >> ~/xalgorix-data/wayback_urls.txt
+
+cat ~/xalgorix-data/wayback_urls.txt ~/xalgorix-data/gau_urls.txt ~/xalgorix-data/waymore_urls.txt ~/xalgorix-data/katana_urls.txt ~/xalgorix-data/hakrawler.txt ~/xalgorix-data/gospider/*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_urls.txt
+wc -l ~/xalgorix-data/all_urls.txt
+
+## 1D: PARAMETER DISCOVERY
+` + "`" + `bash` + "`" + `
+# Parameter discovery
+paramspider -d TARGET -o ~/xalgorix-data/paramspider_urls.txt 2>/dev/null
+cat ~/xalgorix-data/all_urls.txt ~/xalgorix-data/paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ~/xalgorix-data/urls_with_params.txt
+cat ~/xalgorix-data/all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ~/xalgorix-data/all_params.txt
+wc -l ~/xalgorix-data/all_params.txt
+
+# Hidden parameter discovery (CRITICAL)
+cat ~/xalgorix-data/live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
+  arjun -u "$url" --stable -o ~/xalgorix-data/arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
+done
+
+# Extract JS files and analyze
+cat ~/xalgorix-data/all_urls.txt | grep -E "\.js$" | sort -u > ~/xalgorix-data/js_files.txt
+cat ~/xalgorix-data/js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ~/xalgorix-data/js_secrets.txt
+
+## 1E: DNS & INFRASTRUCTURE
+` + "`" + `bash` + "`" + `
+# DNS records - comprehensive
+dig TARGET ANY +noall +answer
+dig TARGET MX NS TXT SOA AAAA +short
+dig _dmarc.TARGET TXT +short
+host -a TARGET 2>/dev/null
+nslookup -type=any TARGET 2>/dev/null || true
+
+# Reverse DNS lookup
+dig -x TARGET +short 2>/dev/null || true
+
+# SPF/DKIM/DMARC analysis
+for sub in _dmarc _spf _dkim; do
+  dig ${sub}._domainkey.TARGET TXT +short 2>/dev/null || true
+done
+
+# AS Number lookup
+whois TARGET | grep -i "AS\|Origin\|NetName" | head -5 || true
+
+## 1F: GATHER INFORMATION FROM PUBLIC SOURCES
+` + "`" + `bash` + "`" + `
+# LinkedIn enumeration (passive)
+# Use recon-ng or LinkedIn search
+
+# Email enumeration (passive)
+theHarvester -d TARGET -b all -f ~/xalgorix-data/emails.html 2>/dev/null || true
+
+# S3 bucket enumeration (passive)
+# Use cloud_enum or s3scanner
+# cloud_enum.py -k TARGET 2>/dev/null || true
+
+# GitHub recon (find exposed keys, tokens)
+# Use gitrob or gitleaks
+# gitrob TARGET --no-banner 2>/dev/null || true
+
+# Paste site search
+# Use pastenewspaper or dumpmon
+
+# COMBINE ALL FINDINGS
+cat ~/xalgorix-data/*subdomains*.txt ~/xalgorix-data/*urls*.txt 2>/dev/null | sort -u > ~/xalgorix-data/complete_inventory.txt
+wc -l ~/xalgorix-data/complete_inventory.txt
+
+# NOTE: After this phase, you should have:
+# - All subdomains (passive + active)
+# - All live hosts with tech stack
+# - All URLs and parameters
+# - All JS files and potential secrets
+# - All DNS records
+# - All ports and services
+# - All potential attack vectors
 
 ` + "`" + `bash` + "`" + `
 # Subdomain enumeration (use ALL tools, merge results)
