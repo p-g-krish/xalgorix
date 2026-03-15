@@ -55,7 +55,7 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | 📊 **PDF Reports** | Professional pentest reports auto-generated |
 | 🔔 **Discord Alerts** | Get notified on scan start/vuln/completion |
 | 🔧 **Auto-Install** | 70+ tool→package mappings |
-| 🧠 **Multi-LLM** | OpenAI, Anthropic, DeepSeek, MiniMax, Groq, Ollama |
+| 🧠 **Multi-LLM** | OpenAI, Anthropic, DeepSeek, MiniMax, Groq, Ollama, Google |
 | 🔐 **Authentication** | Optional login protection for dashboard |
 | 🔍 **CVE Search** | Query NIST NVD database for CVE details |
 | 🐛 **Exploit Search** | Search Exploit-DB for public exploits |
@@ -125,9 +125,14 @@ nano ~/.xalgorix.env
 
 ```bash
 # Required
-XALGORIX_LLM=minimax/MiniMax-M2.5
+XALGORIX_LLM=openai/gpt-4.5
 XALGORIX_API_KEY=your_api_key
-XALGORIX_API_BASE=https://api.minimax.io/
+# OR use Anthropic:
+# XALGORIX_LLM=anthropic/claude-sonnet-4.6
+# XALGORIX_API_KEY=sk-ant-...
+
+# Optional - for custom providers (MiniMax, Ollama, etc.)
+# XALGORIX_API_BASE=https://api.minimax.io/
 
 # Optional
 XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
@@ -172,14 +177,14 @@ xalgorix --target https://example.com
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `XALGORIX_LLM` | Model name (with optional provider prefix) | `minimax/MiniMax-M2.5`, `openai/gpt-4o`, `anthropic/claude-sonnet`, `custom/my-model` |
+| `XALGORIX_LLM` | Model name (with optional provider prefix) | `openai/gpt-4.5`, `anthropic/claude-sonnet-4.6`, `deepseek/deepseek-chat`, `minimax/MiniMax-M2.5`, `custom/my-model` |
 | `XALGORIX_API_KEY` | API key | `sk-...` |
 
 #### Optional - API Base (for custom providers)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `XALGORIX_API_BASE` | API base URL (auto-detected from provider prefix if not set) | `https://api.minimax.io/`, `https://api.openai.com/`, `https://your-custom-llm.com/v1` |
+| `XALGORIX_API_BASE` | API base URL (auto-detected from provider prefix if not set) | `https://api.openai.com/`, `https://api.anthropic.com`, `https://api.minimax.io/`, `https://your-custom-llm.com/v1` |
 
 > **💡 Custom Providers:** To use any custom LLM provider, just set `XALGORIX_LLM=custom/modelname` and `XALGORIX_API_BASE=https://your-api-endpoint.com/v1`
 
@@ -189,12 +194,12 @@ xalgorix --target https://example.com
 |--------|----------|
 | `openai/` | `https://api.openai.com/v1` |
 | `anthropic/` | `https://api.anthropic.com` |
-| `minimax/` | `https://api.minimax.io/v1` |
 | `deepseek/` | `https://api.deepseek.com/v1` |
 | `groq/` | `https://api.groq.com/openai/v1` |
-| `ollama/` | `http://localhost:11434/v1` |
 | `google/` | `https://generativelanguage.googleapis.com/v1` |
 | `gemini/` | `https://generativelanguage.googleapis.com/v1` |
+| `ollama/` | `http://localhost:11434/v1` |
+| `minimax/` | `https://api.minimax.io/v1` |
 
 #### Optional - Model Settings
 
@@ -230,12 +235,13 @@ xalgorix --target https://example.com
 
 Xalgorix supports multiple LLM providers:
 
-- **MiniMax** — `minimax/MiniMax-M2.5`, `minimax/MiniMax-Text-01`
-- **OpenAI** — `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o1-preview`
-- **Anthropic** — `anthropic/claude-sonnet`, `anthropic/claude-opus`
-- **DeepSeek** — `deepseek/chat`
+- **OpenAI** — `openai/gpt-4.5`, `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o1-preview`
+- **Anthropic** — `anthropic/claude-sonnet-4.6`, `anthropic/claude-opus-4.5`
+- **DeepSeek** — `deepseek/deepseek-chat`
 - **Groq** — `groq/llama-3.1-70b`
+- **Google** — `google/gemini-2.0-flash`, `google/gemini-pro`
 - **Ollama** — `ollama/llama3`, `ollama/codellama`
+- **MiniMax** — `minimax/MiniMax-M2.5`, `minimax/MiniMax-Text-01`
 
 ---
 
@@ -302,9 +308,9 @@ xalgorix/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `XALGORIX_LLM` | — | Model (e.g., `minimax/MiniMax-M2.5`) |
+| `XALGORIX_LLM` | — | Model (e.g., `openai/gpt-4.5`, `anthropic/claude-sonnet-4.6`) |
 | `XALGORIX_API_KEY` | — | Your API key |
-| `XALGORIX_API_BASE` | MiniMax | API endpoint |
+| `XALGORIX_API_BASE` | Auto-detected | API endpoint (set for custom providers) |
 | `XALGORIX_DISCORD_WEBHOOK` | — | Discord webhook URL |
 | `XALGORIX_RATE_LIMIT_REQUESTS` | 100 | Requests per window |
 | `XALGORIX_RATE_LIMIT_WINDOW` | 60 | Window in seconds |
@@ -317,13 +323,13 @@ xalgorix/
 
 | Provider | Model Example |
 |----------|--------------|
-| 🔵 MiniMax | `minimax/MiniMax-M2.5` |
-| 🟢 OpenAI | `openai/gpt-5.4` |
-| 🔴 Anthropic | `anthropic/claude-sonnet-4.6` |
-| 🟣 DeepSeek | `deepseek/deepseek-v4` |
-| 🟠 Google | `google/gemini-3.1-pro` |
-| 🟡 Groq | `groq/llama-4-70b` |
-| ⚫ Ollama | `ollama/llama3` (local) |
+| 🟢 OpenAI | `openai/gpt-4.5`, `openai/gpt-4o`, `openai/gpt-4o-mini` |
+| 🔴 Anthropic | `anthropic/claude-sonnet-4.6`, `anthropic/claude-opus-4.5` |
+| 🟣 DeepSeek | `deepseek/deepseek-chat`, `deepseek/deepseek-coder` |
+| 🟠 Google | `google/gemini-2.0-flash`, `google/gemini-pro` |
+| 🟡 Groq | `groq/llama-3.1-70b`, `groq/mixtral-8x7b` |
+| ⚫ Ollama | `ollama/llama3`, `ollama/codellama` (local) |
+| 🔵 MiniMax | `minimax/MiniMax-M2.5`, `minimax/MiniMax-Text-01` |
 
 ---
 
