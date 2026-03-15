@@ -135,6 +135,29 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// CheckEnvFile checks if .xalgorix.env exists and has valid content.
+func CheckEnvFile() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot find home directory: %w", err)
+	}
+
+	envPath := filepath.Join(home, ".xalgorix.env")
+	
+	// Check if file exists
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		return fmt.Errorf("configuration file not found: %s\n\nPlease create it with:\n  XALGORIX_LLM=minimax/MiniMax-M2.5\n  XALGORIX_API_KEY=your_api_key\n\nOr run: xalgorix --setup", envPath)
+	}
+
+	// File exists, check if it has required variables
+	cfg := Get()
+	if cfg.LLM == "" || cfg.APIKey == "" {
+		return fmt.Errorf("configuration file is invalid or missing required variables\n\nPlease add to %s:\n  XALGORIX_LLM=minimax/MiniMax-M2.5\n  XALGORIX_API_KEY=your_api_key", envPath)
+	}
+
+	return nil
+}
+
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
