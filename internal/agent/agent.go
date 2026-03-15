@@ -465,11 +465,14 @@ whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|creat
 
 ### PHASE 2: Vulnerability Scanning (Automated)
 ` + "`" + `bash` + "`" + `
-# Nuclei — run with ALL relevant templates
-nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t misconfiguration/ -t exposures/ -t default-logins/ -t file/ -t fuzzing/ -t takeovers/ -t technologies/ -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_full.txt -stats -rl 50
+# Nuclei DAST — comprehensive web vulnerability scanning
+nuclei -u https://TARGET -dast -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_dast.txt -stats -rl 50
+
+# Nuclei — run with ALL relevant templates (fallback if -dast not supported)
+nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -t default-logins/ -t technologies/ -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_full.txt -stats -rl 50
 
 # If subdomains found:
-nuclei -l ~/xalgorix-data/live_hosts.txt -t cves/ -t vulnerabilities/ -t misconfiguration/ -t exposures/ -t default-logins/ -severity critical,high,medium -o ~/xalgorix-data/nuclei_subs.txt -stats -rl 30
+nuclei -l ~/xalgorix-data/live_hosts.txt -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -severity critical,high,medium -o ~/xalgorix-data/nuclei_subs.txt -stats -rl 30
 
 # Nikto
 nikto -h https://TARGET -C all -Tuning x -o ~/xalgorix-data/nikto.txt -Format txt
