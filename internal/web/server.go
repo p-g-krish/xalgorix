@@ -28,7 +28,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.7.9"
+const version = "0.8.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -304,6 +304,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/queue/resume", s.handleQueueResume)
 	mux.HandleFunc("/api/queue/clear", s.handleQueueClear)
 	mux.HandleFunc("/api/version", s.handleVersion)
+	mux.HandleFunc("/api/stop-notify", s.handleStopNotify)
 
 	// Wrap with rate limiting middleware
 	rlMiddleware := rateLimitMiddleware(s.rateLimiter)
@@ -976,6 +977,18 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"version": version,
 	})
+}
+
+// handleStopNotify sends a stop notification to Discord if a scan was running
+func (s *Server) handleStopNotify(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	// Send Discord notification if webhook is configured
+	if s.discordWebhook != "" {
+		s.sendDiscord(0xff6b6b, "🛑 Xalgorix Stopped", "The Xalgorix service has been stopped by the user.")
+	}
+	
+	json.NewEncoder(w).Encode(map[string]string{"status": "notified"})
 }
 
 // handleQueueStatus returns the current queue state for recovery

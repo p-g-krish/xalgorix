@@ -10,13 +10,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/xalgord/xalgorix/internal/config"
 	"github.com/xalgord/xalgorix/internal/tui"
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.7.9"
+const version = "0.8.0"
 
 func main() {
 	args := parseArgs()
@@ -442,6 +443,17 @@ func startBackground() {
 
 // handleStop stops the xalgorix service
 func handleStop() {
+	// Try to send stop notification to Discord first
+	go func() {
+		resp, err := http.Get("http://localhost:1337/api/stop-notify")
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+	
+	// Small delay to let notification send
+	time.Sleep(500 * time.Millisecond)
+	
 	// Try systemctl first (with sudo)
 	cmd := exec.Command("sudo", "systemctl", "stop", "xalgorix")
 	err := cmd.Run()
