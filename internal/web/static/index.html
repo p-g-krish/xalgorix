@@ -181,13 +181,14 @@
               </div>
             </div>
             <!-- Chat Input -->
-            <div class="chat-input-container" id="chat-input-container" style="display:none; padding: 10px; background: var(--bg-tertiary); border-top: 1px solid var(--border);">
-              <div style="display: flex; gap: 8px;">
-                <input type="text" id="chat-input" placeholder="Send a message to Xalgorix..." 
-                  style="flex:1; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px;"
+            <div class="chat-input-container" id="chat-input-container" style="padding: 12px; background: #0f172a; border-top: 1px solid #1e293b; position: sticky; bottom: 0;">
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="chat-input" placeholder="Send a message to Xalgorix during scan..." 
+                  style="flex:1; padding: 12px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px;"
                   onkeypress="if(event.key==='Enter')sendChatMessage()">
-                <button onclick="sendChatMessage()" style="padding: 10px 16px; background: var(--primary); border: none; border-radius: 6px; color: var(--bg-primary); cursor: pointer; font-weight: 600;">Send</button>
+                <button onclick="sendChatMessage()" style="padding: 12px 20px; background: #00c896; border: none; border-radius: 8px; color: #0f172a; cursor: pointer; font-weight: 700; font-size: 14px;">Send</button>
               </div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 6px;">Chat is active during scans</div>
             </div>
           </div>
         </div>

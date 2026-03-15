@@ -801,6 +801,8 @@
                 // There's a running scan, load it
                 history.replaceState(null, '', '/' + status.scan_id);
                 await loadScanById(status.scan_id);
+                // Show chat input when scan is running
+                document.getElementById('chat-input-container').style.display = 'block';
                 return;
             }
         } catch (e) {
