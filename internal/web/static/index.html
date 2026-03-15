@@ -180,6 +180,15 @@
                 <div class="empty-desc">Enter a target and start your pentest</div>
               </div>
             </div>
+            <!-- Chat Input -->
+            <div class="chat-input-container" id="chat-input-container" style="display:none; padding: 10px; background: var(--bg-tertiary); border-top: 1px solid var(--border);">
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="chat-input" placeholder="Send a message to Xalgorix..." 
+                  style="flex:1; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px;"
+                  onkeypress="if(event.key==='Enter')sendChatMessage()">
+                <button onclick="sendChatMessage()" style="padding: 10px 16px; background: var(--primary); border: none; border-radius: 6px; color: var(--bg-primary); cursor: pointer; font-weight: 600;">Send</button>
+              </div>
+            </div>
           </div>
         </div>
         

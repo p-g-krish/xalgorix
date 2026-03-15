@@ -234,6 +234,27 @@ func (a *Agent) Stop() {
 	a.stopped = true
 }
 
+// SendMessage allows sending additional messages to the agent during a scan
+func (a *Agent) SendMessage(message string) (string, error) {
+	if a.client == nil {
+		return "", fmt.Errorf("agent not initialized")
+	}
+	
+	// Add user message
+	a.messages = append(a.messages, llm.Message{Role: "user", Content: message})
+	
+	// Get response from LLM
+	response, err := a.client.Chat(a.messages)
+	if err != nil {
+		return "", err
+	}
+	
+	// Add assistant response to messages
+	a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
+	
+	return response, nil
+}
+
 // formatToolResult formats tool execution results with helpful suggestions
 func formatToolResult(toolName string, result tools.Result) string {
 	output := result.Output

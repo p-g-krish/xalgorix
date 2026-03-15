@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.8.8"
+const version = "0.9.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -381,6 +381,7 @@ button:hover{background:#00b087}
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/stop-notify", s.handleStopNotify)
 	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/chat", s.handleChat)
 
 	// Wrap with auth then rate limiting middleware
 	rlMiddleware := rateLimitMiddleware(s.rateLimiter)
@@ -1096,6 +1097,47 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid credentials"})
 	}
+}
+
+// handleChat allows users to send messages to the agent during a scan
+type ChatRequest struct {
+	Message string `json:"message"`
+}
+
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		http.Error(w, "message is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if there's an active scan
+	if s.agent == nil {
+		http.Error(w, "no active scan", http.StatusBadRequest)
+		return
+	}
+
+	// Send the message to the agent
+	response, err := s.agent.SendMessage(req.Message)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"response": response,
+	})
 }
 
 // handleQueueStatus returns the current queue state for recovery

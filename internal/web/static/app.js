@@ -558,10 +558,54 @@
             const elapsed = Math.floor((Date.now() - scanStart) / 1000);
             document.getElementById('live-clock').textContent = formatDuration(elapsed);
         }, 1000);
+        // Show chat input when scan starts
+        document.getElementById('chat-input-container').style.display = 'block';
     }
 
     function stopTimer() { 
         if (timerInterval) clearInterval(timerInterval); 
+    }
+
+    // ── Chat Functions ─────────────────────────────────────
+    window.sendChatMessage = async function() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        if (!message) return;
+        
+        input.value = '';
+        
+        // Add user message to feed
+        const feedBody = document.getElementById('feed-body');
+        const userMsg = document.createElement('div');
+        userMsg.className = 'event event-message';
+        userMsg.style.background = 'var(--bg-tertiary)';
+        userMsg.style.padding = '10px';
+        userMsg.style.margin = '5px 0';
+        userMsg.style.borderRadius = '6px';
+        userMsg.innerHTML = '<strong style="color: var(--primary)">You:</strong> ' + esc(message);
+        feedBody.appendChild(userMsg);
+        scrollToBottom();
+        
+        // Send to server
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message})
+            });
+            const data = await resp.json();
+            
+            // Add Xalgorix response to feed
+            const botMsg = document.createElement('div');
+            botMsg.className = 'event event-message';
+            botMsg.style.padding = '10px';
+            botMsg.style.margin = '5px 0';
+            botMsg.innerHTML = '<strong style="color: var(--primary)">Xalgorix:</strong> ' + mdToHtml(data.response);
+            feedBody.appendChild(botMsg);
+            scrollToBottom();
+        } catch (e) {
+            console.error('Chat error:', e);
+        }
     }
 
     // ── Stat Pop Animation ─────────────────────────────────
