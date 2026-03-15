@@ -177,7 +177,7 @@ xalgorix --target https://example.com
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `XALGORIX_LLM` | Model name (with optional provider prefix) | `openai/gpt-4o`, `anthropic/claude-sonnet-4`, `deepseek/deepseek-chat`, `minimax/MiniMax-M2.5`, `custom/my-model` |
+| `XALGORIX_LLM` | Model name (with optional provider prefix) | `openai/gpt-5`, `anthropic/claude-sonnet-4`, `deepseek/deepseek-v3`, `minimax/M3`, `custom/my-model` |
 | `XALGORIX_API_KEY` | API key | `sk-...` |
 
 #### Optional - API Base (for custom providers)
@@ -235,13 +235,13 @@ xalgorix --target https://example.com
 
 Xalgorix supports multiple LLM providers:
 
-- **OpenAI** — `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o1`, `openai/o1-mini`
-- **Anthropic** — `anthropic/claude-sonnet-4-20250514`, `anthropic/claude-opus-4-5`
-- **DeepSeek** — `deepseek/deepseek-chat`, `deepseek/deepseek-coder`
-- **Groq** — `groq/llama-3.3-70b`, `groq/mixtral-8x7b`
-- **Google** — `google/gemini-2.0-flash-exp`, `google/gemini-2.0-pro-exp`
-- **Ollama** — `ollama/llama3.3`, `ollama/codellama`
-- **MiniMax** — `minimax/MiniMax-M2.5`, `minimax/Text-01`
+- **OpenAI** — `openai/gpt-5`, `openai/gpt-4o`, `openai/o1`, `openai/o3`
+- **Anthropic** — `anthropic/claude-sonnet-4-20250701`, `anthropic/claude-opus-4-20250701`
+- **DeepSeek** — `deepseek/deepseek-v3`, `deepseek/deepseek-coder-v3`
+- **Groq** — `groq/llama-4-scout`, `groq/llama-4-marco`
+- **Google** — `google/gemini-2.5-pro`, `google/gemini-2.5-flash`
+- **Ollama** — `ollama/llama4`, `ollama/qwen2.5`
+- **MiniMax** — `minimax/M3`, `minimax/Text-01`
 
 ---
 
@@ -323,13 +323,13 @@ xalgorix/
 
 | Provider | Model Example |
 |----------|--------------|
-| 🟢 OpenAI | `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o1` |
+| 🟢 OpenAI | `openai/gpt-5`, `openai/gpt-4o`, `openai/o1`, `openai/o3` |
 | 🔴 Anthropic | `anthropic/claude-sonnet-4`, `anthropic/claude-opus-4` |
-| 🟣 DeepSeek | `deepseek/deepseek-chat`, `deepseek/deepseek-coder` |
-| 🟠 Google | `google/gemini-2.0-flash`, `google/gemini-2.0-pro` |
-| 🟡 Groq | `groq/llama-3.3-70b`, `groq/mixtral-8x7b` |
-| ⚫ Ollama | `ollama/llama3.3`, `ollama/codellama` (local) |
-| 🔵 MiniMax | `minimax/MiniMax-M2.5`, `minimax/Text-01` |
+| 🟣 DeepSeek | `deepseek/deepseek-v3`, `deepseek/deepseek-coder-v3` |
+| 🟠 Google | `google/gemini-2.5-pro`, `google/gemini-2.5-flash` |
+| 🟡 Groq | `groq/llama-4-scout`, `groq/llama-4-marco` |
+| ⚫ Ollama | `ollama/llama4`, `ollama/qwen2.5` (local) |
+| 🔵 MiniMax | `minimax/M3`, `minimax/Text-01` |
 
 ---
 
