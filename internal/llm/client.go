@@ -86,24 +86,50 @@ type chatResponse struct {
 // resolveEndpoint returns the full chat completions URL and clean model name.
 // Handles provider prefixes like "minimax/", "openai/", "anthropic/", etc.
 // Auto-appends /v1/chat/completions if the base doesn't already contain /v1.
+// Also supports custom providers - just set XALGORIX_API_BASE to your endpoint.
 func (c *Client) resolveEndpoint() (string, string) {
 	apiBase := c.cfg.APIBase
-	if apiBase == "" {
-		apiBase = "https://api.openai.com/v1"
+	model := c.apiModel
+	
+	// Extract provider prefix if present (e.g., "openai/gpt-4o" -> provider="openai", model="gpt-4o")
+	provider := ""
+	if idx := strings.Index(model, "/"); idx >= 0 {
+		provider = strings.ToLower(model[:idx])
+		model = model[idx+1:]
 	}
+	
+	// Auto-detect API base based on provider prefix if XALGORIX_API_BASE not set
+	if apiBase == "" {
+		switch provider {
+		case "openai":
+			apiBase = "https://api.openai.com/v1"
+		case "anthropic":
+			apiBase = "https://api.anthropic.com"
+		case "minimax":
+			apiBase = "https://api.minimax.io/v1"
+		case "deepseek":
+			apiBase = "https://api.deepseek.com/v1"
+		case "groq":
+			apiBase = "https://api.groq.com/openai/v1"
+		case "ollama":
+			apiBase = "http://localhost:11434/v1"
+		case "google", "gemini":
+			apiBase = "https://generativelanguage.googleapis.com/v1"
+		default:
+			// No prefix or unknown - default to OpenAI
+			apiBase = "https://api.openai.com/v1"
+		}
+	}
+	
 	apiBase = strings.TrimRight(apiBase, "/")
 
-	// Auto-append /v1 if not present
-	if !strings.HasSuffix(apiBase, "/v1") && !strings.Contains(apiBase, "/v1/") {
-		apiBase += "/v1"
-	}
-
-	url := apiBase + "/chat/completions"
-
-	// Strip provider prefix from model name (e.g. "minimax/MiniMax-M2.5" → "MiniMax-M2.5")
-	model := c.apiModel
-	if idx := strings.Index(model, "/"); idx >= 0 {
-		model = model[idx+1:]
+	// Build the URL based on provider
+	url := apiBase
+	if !strings.Contains(apiBase, "anthropic") && !strings.Contains(apiBase, "google") {
+		if !strings.HasSuffix(apiBase, "/v1") && !strings.Contains(apiBase, "/v1/") {
+			url += "/v1"
+		}
+		url += "/chat/completions"
 	}
 
 	return url, model

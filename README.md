@@ -172,9 +172,29 @@ xalgorix --target https://example.com
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `XALGORIX_LLM` | Model name | `minimax/MiniMax-M2.5`, `openai/gpt-4o`, `anthropic/claude-sonnet` |
+| `XALGORIX_LLM` | Model name (with optional provider prefix) | `minimax/MiniMax-M2.5`, `openai/gpt-4o`, `anthropic/claude-sonnet`, `custom/my-model` |
 | `XALGORIX_API_KEY` | API key | `sk-...` |
-| `XALGORIX_API_BASE` | API base URL | `https://api.minimax.io/`, `https://api.openai.com/` |
+
+#### Optional - API Base (for custom providers)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `XALGORIX_API_BASE` | API base URL (auto-detected from provider prefix if not set) | `https://api.minimax.io/`, `https://api.openai.com/`, `https://your-custom-llm.com/v1` |
+
+> **💡 Custom Providers:** To use any custom LLM provider, just set `XALGORIX_LLM=custom/modelname` and `XALGORIX_API_BASE=https://your-api-endpoint.com/v1`
+
+#### Supported Provider Prefixes (auto-detected)
+
+| Prefix | API Base |
+|--------|----------|
+| `openai/` | `https://api.openai.com/v1` |
+| `anthropic/` | `https://api.anthropic.com` |
+| `minimax/` | `https://api.minimax.io/v1` |
+| `deepseek/` | `https://api.deepseek.com/v1` |
+| `groq/` | `https://api.groq.com/openai/v1` |
+| `ollama/` | `http://localhost:11434/v1` |
+| `google/` | `https://generativelanguage.googleapis.com/v1` |
+| `gemini/` | `https://generativelanguage.googleapis.com/v1` |
 
 #### Optional - Model Settings
 
