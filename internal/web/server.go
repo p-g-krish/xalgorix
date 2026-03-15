@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.9.3"
+const version = "0.9.4"
 
 //go:embed static/*
 var staticFiles embed.FS
