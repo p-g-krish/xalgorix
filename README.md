@@ -62,24 +62,34 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 
 | Feature | Xalgorix | Shannon | Strix | PentestGPT | HexStrike |
 |---------|:--------:|:-------:|:-----:|:----------:|:---------:|
-| **Self-Hosted** | ✅ | ❌ | ❌ | ✅ | ✅ |
-| **No API Subscription** | ✅ (run locally) | ❌ (SaaS) | ❌ (SaaS) | ⚠️ (needs API) | ⚠️ (needs API) |
+| **Self-Hosted** | ✅ | ⚠️ SaaS | ✅ | ✅ | ✅ |
+| **Blackbox Testing** | ✅ | ❌ | ✅ | ✅ | ✅ |
+| **Whitebox Testing** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Web UI Dashboard** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Live Real-Time Feed** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **PDF Reports** | ✅ Auto | ❌ | ❌ | ⚠️ Manual | ❌ |
+| **Live Real-Time Feed** | ✅ | ❌ | ❌ | ⚠️ Terminal | ❌ |
+| **PDF Reports** | ✅ Auto | ✅ | ✅ | ⚠️ Manual | ❌ |
 | **Discord Alerts** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Browser Automation** | ✅ Playwright | ✅ | ✅ | ✅ | ✅ |
-| **Auto-Install Tools** | ✅ 70+ | ❌ | ❌ | ⚠️ Manual | ❌ |
-| **Rate Limiting** | ✅ Configurable | ❌ | ❌ | ❌ | ❌ |
-| **Queue Scanning** | ✅ Multi-target | ❌ | ❌ | ❌ | ❌ |
+| **Auto-Install Tools** | ✅ 70+ | ❌ | ⚠️ Docker | ⚠️ Docker | ⚠️ MCP |
+| **Rate Limiting** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Queue/Multi-Target** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Severity Filtering** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Circuit Breaker** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Whitebox Testing** | ⚠️ (with source) | ✅ | ⚠️ | ❌ | ❌ |
+| **Research Publication** | ❌ | ❌ | ❌ | ✅ USENIX | ❌ |
+| **Requires Source Code** | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-### Key Advantages
+### Key Differences
 
-- **100% Self-Hosted** — No external dependencies, no SaaS subscription required
-- **Rich Web UI** — Dark mode dashboard with live feed, token tracking, vuln details
+- **Shannon** — Requires source code (white-box only), part of paid Keygraph platform
+- **Strix** — Docker-based, requires Docker, good reports but no UI
+- **PentestGPT** — Published at USENIX Security 2024, Docker-based, terminal-only
+- **HexStrike** — MCP server integration, 150+ tools via MCP protocol
+
+### Why Xalgorix?
+
+- **100% Self-Hosted** — No SaaS subscription, runs entirely on your machine
+- **True Blackbox** — Test any target without source code
+- **Rich Web UI** — Dark mode dashboard with live feed, token tracking, vulnerability details
 - **Automated Reports** — Professional PDF reports auto-generated and sent to Discord
 - **Zero Setup** — Auto-installs 70+ security tools with package mapping
 - **Production Ready** — Rate limiting, circuit breaker, queue scanning, authentication
