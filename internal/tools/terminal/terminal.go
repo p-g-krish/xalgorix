@@ -122,7 +122,27 @@ func executeCommand(args map[string]string) (tools.Result, error) {
 		return tools.Result{Output: fmt.Sprintf("[BLOCKED] Destructive command rejected: %s. Xalgorix is read-only — it tests for vulnerabilities without causing damage.", reason)}, nil
 	}
 
+	// Pre-check: extract and verify all required tools are available
+	// This ensures tools are installed BEFORE command runs
+	toolsToCheck := extractCommands(command)
+	for _, tool := range toolsToCheck {
+		if _, err := exec.LookPath(tool); err != nil {
+			// Tool not found, try to install it
+			pkg := resolvePackage(tool)
+			if pkg != "" {
+				installOutput := installPackage(pkg)
+				// Add install info to output
+				_ = installOutput // logged in installPackage
+			}
+		}
+	}
+
 	timeoutSec := 120
+	if t, ok := args["timeout"]; ok {
+		fmt.Sscanf(t, "%d", &timeoutSec)
+	}
+
+	// Run the command
 	if t, ok := args["timeout"]; ok {
 		fmt.Sscanf(t, "%d", &timeoutSec)
 	}
@@ -506,6 +526,46 @@ func simpleURLDecode(s string) string {
 				i-- // recheck from the new position
 			}
 		}
+	}
+	return result
+}
+
+// extractCommands extracts all unique tool/command names from a shell command
+func extractCommands(cmd string) []string {
+	// Common security tools to look for
+	tools := []string{
+		"nmap", "nikto", "sqlmap", "gobuster", "ffuf", "dirb", "curl", "wget",
+		"nuclei", "httpx", "dnsx", "subfinder", "findomain", "assetfinder",
+		"masscan", "nc", "netcat", "socat", "openssl", "whatweb", "wafw00f",
+		"gospider", "katana", "hakrawler", "gau", "waybackurls", "paramspider",
+		"arjun", "x8", "jq", "xmllint", "hydra", "john",
+		"git", "dirsearch", "feroxbuster", "testssl", "sslyze",
+		"okenv", "ds_store", "gitdumper", "githacker",
+	}
+	
+	found := make(map[string]bool)
+	lowerCmd := strings.ToLower(cmd)
+	
+	for _, tool := range tools {
+		// Check if tool appears as a standalone word in the command
+		patterns := []string{
+			" " + tool + " ",
+			" " + tool + "\n",
+			"|" + tool + " ",
+			"&&" + tool + " ",
+			tool + " -",
+			tool + " --",
+		}
+		for _, p := range patterns {
+			if strings.Contains(lowerCmd, p) {
+				found[tool] = true
+			}
+		}
+	}
+	
+	result := make([]string, 0, len(found))
+	for t := range found {
+		result = append(result, t)
 	}
 	return result
 }

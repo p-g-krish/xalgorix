@@ -402,17 +402,29 @@ START with Phase 1 recon. After each phase, review your notes, identify gaps, an
 }
 
 const defaultChecklist = `
+## CRITICAL INSTRUCTIONS - READ CAREFULLY
+
+⚠️ DO NOT SKIP ANY PHASE - Every phase is important!
+⚠️ DO NOT GIVE UP EARLY - If one tool fails, try another
+⚠️ TEST EVERY PARAMETER - Every input field is a potential vector
+⚠️ CHECK EVERY ENDPOINT - Even seemingly useless URLs may have vulns
+⚠️ DONT STOP AT FIRST FIND - Continue testing until ALL phases complete
+⚠️ BE THOROUGH - Missing one vuln could be the difference between safe and compromised
+
 ## THINKING FRAMEWORK (apply before every phase)
 1. What is the attack surface? (domains, subdomains, ports, endpoints, parameters, APIs)
 2. What technology stack is running? (server, framework, CMS, database, CDN, WAF)
 3. What are the highest-impact vulns for this stack? (e.g., Joomla → CVE-2023-23752, WordPress → wp-admin brute + plugin RCE)
 4. What did previous phases reveal? Use add_note/read_notes to track and chain findings.
 5. What haven't I tested yet? Go back and test it.
+6. Did I try multiple tools for the same test? If one fails, try another!
+7. Did I verify each finding manually? Automated tools can have false positives.
 
 ---
 
 ### PHASE 1: Deep Reconnaissance & Attack Surface Mapping
 **Goal: Map EVERYTHING — subdomains, ports, services, endpoints, parameters, tech stack.**
+**MUST COMPLETE THIS PHASE FULLY BEFORE MOVING ON - Do not skip subdomain enumeration!**
 
 ` + "`" + `bash` + "`" + `
 # Subdomain enumeration (use ALL tools, merge results)
@@ -484,6 +496,8 @@ whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|creat
 ---
 
 ### PHASE 2: Vulnerability Scanning (Automated)
+**DO NOT SKIP THIS PHASE - Run ALL vulnerability scanners!**
+**MUST COMPLETE FULLY - Run nuclei on ALL discovered endpoints, not just the main domain!**
 ` + "`" + `bash` + "`" + `
 # Nuclei DAST — comprehensive web vulnerability scanning
 nuclei -u https://TARGET -dast -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_dast.txt -stats -rl 50
@@ -503,6 +517,11 @@ nmap --script vuln -p 80,443,8080,8443 TARGET -oN ~/xalgorix-data/nmap_vuln.txt
 ---
 
 ### PHASE 3: Directory & File Discovery
+**DO NOT SKIP - Use multiple tools! Run ffuf, gobuster, dirsearch, and feroxbuster!**
+**Check ALL status codes - 200, 301, 302, 401, 403, 500 - all may reveal content!**
+
+### PHASE 4: SSL/TLS, Headers & CORS
+**DO NOT SKIP - Run testssl and check headers on ALL discovered domains!**
 ` + "`" + `bash` + "`" + `
 # Directory brute-forcing with multiple wordlists
 gobuster dir -u https://TARGET -w /usr/share/wordlists/dirb/common.txt -t 50 -x php,html,js,txt,bak,old,zip,sql,xml,json,conf,env,log,yml,yaml,toml,ini,cfg,asp,aspx,jsp -o ~/xalgorix-data/dirs.txt --no-error -b 404
