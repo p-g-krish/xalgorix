@@ -128,6 +128,8 @@ XALGORIX_API_BASE=https://api.minimax.io/
 XALGORIX_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
 ```
 
+> ⚠️ **Note:** Xalgorix will refuse to start if `~/.xalgorix.env` is missing or missing required variables (`XALGORIX_LLM` and `XALGORIX_API_KEY`).
+
 ### 3️⃣ Run
 
 ```bash
