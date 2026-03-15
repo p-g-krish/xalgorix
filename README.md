@@ -54,6 +54,35 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | 🔔 **Discord Alerts** | Get notified on scan start/vuln/completion |
 | 🔧 **Auto-Install** | 70+ tool→package mappings |
 | 🧠 **Multi-LLM** | OpenAI, Anthropic, DeepSeek, MiniMax, Groq, Ollama |
+| 🔐 **Authentication** | Optional login protection for dashboard |
+
+---
+
+## 🆚 Why Xalgorix?
+
+| Feature | Xalgorix | Shannon | Strix | PentestGPT | HexStrike |
+|---------|:--------:|:-------:|:-----:|:----------:|:---------:|
+| **Self-Hosted** | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **No API Subscription** | ✅ (run locally) | ❌ (SaaS) | ❌ (SaaS) | ⚠️ (needs API) | ⚠️ (needs API) |
+| **Web UI Dashboard** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Live Real-Time Feed** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **PDF Reports** | ✅ Auto | ❌ | ❌ | ⚠️ Manual | ❌ |
+| **Discord Alerts** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Browser Automation** | ✅ Playwright | ✅ | ✅ | ✅ | ✅ |
+| **Auto-Install Tools** | ✅ 70+ | ❌ | ❌ | ⚠️ Manual | ❌ |
+| **Rate Limiting** | ✅ Configurable | ❌ | ❌ | ❌ | ❌ |
+| **Queue Scanning** | ✅ Multi-target | ❌ | ❌ | ❌ | ❌ |
+| **Severity Filtering** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Circuit Breaker** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Whitebox Testing** | ⚠️ (with source) | ✅ | ⚠️ | ❌ | ❌ |
+
+### Key Advantages
+
+- **100% Self-Hosted** — No external dependencies, no SaaS subscription required
+- **Rich Web UI** — Dark mode dashboard with live feed, token tracking, vuln details
+- **Automated Reports** — Professional PDF reports auto-generated and sent to Discord
+- **Zero Setup** — Auto-installs 70+ security tools with package mapping
+- **Production Ready** — Rate limiting, circuit breaker, queue scanning, authentication
 
 ---
 
