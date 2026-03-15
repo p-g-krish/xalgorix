@@ -46,14 +46,18 @@ var packageMap = map[string]string{
 	// SSL/TLS
 	"openssl": "openssl",
 	// Recon / enumeration
-	"nikto":     "nikto",
-	"dirb":      "dirb",
-	"gobuster":  "gobuster",
-	"ffuf":      "ffuf",
-	"subfinder": "subfinder",
-	"amass":     "amass",
-	"masscan":   "masscan",
-	"wfuzz":     "wfuzz",
+	"nikto":      "nikto",
+	"dirb":       "dirb",
+	"gobuster":   "gobuster",
+	"ffuf":       "ffuf",
+	"subfinder":  "subfinder",
+	"findomain":  "findomain",
+	"assetfinder": "assetfinder",
+	"masscan":    "masscan",
+	"wfuzz":      "wfuzz",
+	"httpx":      "httpx",
+	"dnsx":        "dnsx",
+	"nuclei":      "nuclei",
 	// Text processing
 	"jq":        "jq",
 	"xmllint":   "libxml2-utils",
@@ -227,6 +231,28 @@ func resolvePackage(cmd string) string {
 }
 
 func installPackage(pkg string) string {
+	// Special handling for Go-installed tools
+	goTools := map[string]string{
+		"nuclei":      "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+		"httpx":       "github.com/projectdiscovery/httpx/cmd/httpx@latest",
+		"dnsx":        "github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
+		"subfinder":   "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+		"findomain":   "github.com/findomain/findomain@latest",
+		"assetfinder": "github.com/tomnomnom/assetfinder@latest",
+	}
+	
+	if goPkg, ok := goTools[pkg]; ok {
+		installCmd := fmt.Sprintf("go install -v %s 2>&1", goPkg)
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Sprintf("[install %s failed: %s]\n%s", pkg, err, truncate(string(out)))
+		}
+		return fmt.Sprintf("[installed %s successfully]", pkg)
+	}
+	
 	// Detect package manager and build install command
 	var installCmd string
 
