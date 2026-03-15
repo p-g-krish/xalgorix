@@ -398,7 +398,6 @@ const defaultChecklist = `
 subfinder -d TARGET -all -recursive -o ~/xalgorix-data/subs_subfinder.txt
 findomain -t TARGET -o ~/xalgorix-data/subs_findomain.txt 2>/dev/null
 assetfinder --subs-only TARGET | tee ~/xalgorix-data/subs_assetfinder.txt
-amass enum -d TARGET -passive -o ~/xalgorix-data/subs_amass.txt 2>/dev/null
 cat ~/xalgorix-data/subs_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_subdomains.txt
 wc -l ~/xalgorix-data/all_subdomains.txt
 
