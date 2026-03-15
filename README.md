@@ -177,7 +177,7 @@ xalgorix --target https://example.com
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `XALGORIX_LLM` | Model name (with optional provider prefix) | `openai/gpt-5`, `anthropic/claude-sonnet-4`, `deepseek/deepseek-v3`, `minimax/M3`, `custom/my-model` |
+| `XALGORIX_LLM` | Model name (with optional provider prefix) | `openai/gpt-5.4`, `anthropic/claude-opus-4.6`, `deepseek/deepseek-v4`, `minimax/M3`, `custom/my-model` |
 | `XALGORIX_API_KEY` | API key | `sk-...` |
 
 #### Optional - API Base (for custom providers)
@@ -235,12 +235,12 @@ xalgorix --target https://example.com
 
 Xalgorix supports multiple LLM providers:
 
-- **OpenAI** — `openai/gpt-5`, `openai/gpt-4o`, `openai/o1`, `openai/o3`
-- **Anthropic** — `anthropic/claude-sonnet-4-20250701`, `anthropic/claude-opus-4-20250701`
-- **DeepSeek** — `deepseek/deepseek-v3`, `deepseek/deepseek-coder-v3`
-- **Groq** — `groq/llama-4-scout`, `groq/llama-4-marco`
-- **Google** — `google/gemini-2.5-pro`, `google/gemini-2.5-flash`
-- **Ollama** — `ollama/llama4`, `ollama/qwen2.5`
+- **OpenAI** — `openai/gpt-5.4`, `openai/gpt-5`, `openai/o1`, `openai/o3`
+- **Anthropic** — `anthropic/claude-opus-4.6`, `anthropic/claude-sonnet-4.6`
+- **DeepSeek** — `deepseek/deepseek-v4`, `deepseek/deepseek-v3`, `deepseek/deepseek-coder`
+- **Google** — `google/gemini-3.1-pro`, `google/gemini-2.0-flash`
+- **Groq** — hosts Llama 4, Qwen 3, Mixtral (use model name directly)
+- **Ollama** — `ollama/llama4`, `ollama/qwen3` (local)
 - **MiniMax** — `minimax/M3`, `minimax/Text-01`
 
 ---
@@ -323,12 +323,12 @@ xalgorix/
 
 | Provider | Model Example |
 |----------|--------------|
-| 🟢 OpenAI | `openai/gpt-5`, `openai/gpt-4o`, `openai/o1`, `openai/o3` |
-| 🔴 Anthropic | `anthropic/claude-sonnet-4`, `anthropic/claude-opus-4` |
-| 🟣 DeepSeek | `deepseek/deepseek-v3`, `deepseek/deepseek-coder-v3` |
-| 🟠 Google | `google/gemini-2.5-pro`, `google/gemini-2.5-flash` |
-| 🟡 Groq | `groq/llama-4-scout`, `groq/llama-4-marco` |
-| ⚫ Ollama | `ollama/llama4`, `ollama/qwen2.5` (local) |
+| 🟢 OpenAI | `openai/gpt-5.4`, `openai/gpt-5`, `openai/o1`, `openai/o3` |
+| 🔴 Anthropic | `anthropic/claude-opus-4.6`, `anthropic/claude-sonnet-4.6` |
+| 🟣 DeepSeek | `deepseek/deepseek-v4`, `deepseek/deepseek-v3` |
+| 🟠 Google | `google/gemini-3.1-pro`, `google/gemini-2.0-flash` |
+| 🟡 Groq | `llama-4`, `qwen3`, `mixtral` (uses model name directly) |
+| ⚫ Ollama | `ollama/llama4`, `ollama/qwen3` (local) |
 | 🔵 MiniMax | `minimax/M3`, `minimax/Text-01` |
 
 ---
