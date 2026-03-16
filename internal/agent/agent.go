@@ -373,11 +373,42 @@ func (a *Agent) buildSystemPrompt(targets []string, instruction string) string {
 15. If 403 Forbidden, try: path traversal bypass (/./path, /../path, /path;/), HTTP verb tampering, header injection (X-Original-URL, X-Rewrite-URL).
 16. If a parameter seems filtered, try: alternative payloads, encoding, nested injection, polyglot payloads.
 
-### Vulnerability Chaining Rules
+### Vulnerability Reporting Rules (STRICT)
 17. Chain findings for maximum impact: info leak → credential theft → account takeover → RCE.
 18. If you find IDOR, test it on EVERY endpoint — not just one.
 19. If you find an open redirect, chain it with SSRF, OAuth token theft, or phishing.
-20. Report EVERY vulnerability immediately using report_vulnerability with severity, CVSS, PoC, and remediation. When done, call finish.
+
+### CRITICAL: What NOT to Report as Vulnerability
+The following are INFORMATION only - NOT vulnerabilities:
+- ❌ Outdated software versions (only a finding if you can EXPLOIT it)
+- ❌ Missing security headers (X-Powered-By, Server, etc.) - these are INFO, not vulns
+- ❌ Missing HttpOnly/Secure on cookies - INFO only
+- ❌ Information disclosure (version numbers) - INFO only
+- ❌ TRACE method enabled - INFO only
+- ❌ Missing X-Frame-Options - INFO only (unless you can demonstrate clickjacking)
+- ❌ Missing Content-Security-Policy - INFO only
+
+### When to Report a Vulnerability
+Only report as vulnerability if you can:
+- ✅ EXPLOIT it to demonstrate impact
+- ✅ Show a working Proof of Concept (PoC)
+- ✅ Prove it affects users/production
+- ✅ Demonstrate financial, data, or access impact
+
+If you cannot exploit it, mark it as INFO in your notes, NOT as a vulnerability.
+
+### WAF Bypass Rules (MANDATORY)
+20. ALWAYS try to bypass WAF/Protection:
+- Encoding: URL, double URL, Unicode, Base64
+- Headers: X-Originating-IP, X-Forwarded-For, X-Remote-IP, X-Remote-Addr
+- Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD
+- Content-Type: application/x-www-form-urlencoded, multipart/form-data, application/json, application/xml
+- Padding: whitespace, comments, null bytes
+- Case variation: SeLeCt, InSeRt, UpDaTe
+- Time-based: sleep(5), waitfor delay, benchmark
+
+### Reporting
+21. Report vulnerabilities ONLY with EXPLOITABLE PoC. When done, call finish.
 
 ## Tool Call Format
 <function=tool_name>
@@ -699,7 +730,13 @@ nuclei -l ~/xalgorix-data/live_hosts.txt -t cves/ -t vulnerabilities/ -t exposur
 nmap --script vuln -p 80,443,8080,8443 TARGET -oN ~/xalgorix-data/nmap_vuln.txt
 ` + "`" + `
 
-**AFTER SCANNING**: Review every nuclei/nmap finding. For each one, manually verify it and report_vulnerability.
+**AFTER SCANNING**: Review every nuclei/nmap finding. 
+
+**IMPORTANT: Verify before reporting:**
+- Nuclei often reports FALSE POSITIVES
+- Test EACH finding MANUALLY to verify it's exploitable
+- Only report if you can demonstrate a working PoC
+- If only detected by tool but not exploitable → mark as INFO in notes, NOT as vulnerability
 
 ---
 
