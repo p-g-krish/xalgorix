@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.10.0"
+const version = "0.10.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -854,6 +854,95 @@ Document EVERYTHING in add_note. THINK before each test. Automated tools are dum
 			}
 
 			continue // Skip the regular scan below since we did wildcard handling above
+		} else if req.ScanMode == "dast" {
+			// DAST mode - scan specific URLs (not subdomains)
+			// Build comprehensive DAST instruction for URL scanning
+			dastInstruction := fmt.Sprintf(`DAST (Dynamic Application Security Testing) ON: %s
+
+This is a URL-LEVEL vulnerability assessment. You are testing a specific URL, not a domain or subdomain.
+
+TARGET URL: %s
+
+## CRITICAL: DAST MODE RULES
+- Do NOT scan for subdomains - only test THIS exact URL
+- Do NOT run nmap/subfinder/amass - they are for recon, not DAST
+- Focus on the URL provided, its parameters, and endpoints it reveals
+
+## PHASE 1: URL ANALYSIS
+- Send a request and analyze the response
+- Identify: parameters, forms, headers, cookies, HTTP methods supported
+- Check for interesting headers: Server, X-Powered-By, X-Framework
+- Note all input fields, even hidden ones
+
+## PHASE 2: CRAWL THE APPLICATION (from this URL)
+- Use tools to discover more endpoints FROM this URL:
+  - gospider -s %s --depth 2
+  - katana -u %s -d 3 -jc
+  - hakrawler -url %s -depth 2
+- Collect ALL URLs discovered
+
+## PHASE 3: PARAMETER DISCOVERY
+- Find ALL parameters in all discovered URLs
+- Use: paramspider -u %s
+- Use: arjun -u %s -m GET
+
+## PHASE 4: VULNERABILITY TESTING (TEST EVERY PARAMETER)
+For EACH parameter found, test:
+
+### SQL Injection
+- ' OR '1'='1, admin'--, ' UNION SELECT--
+- Test with time delays: '; WAITFOR DELAY
+- Test in GET, POST, headers, cookies
+
+### XSS
+- <script>alert(1)</script>, <img src=x onerror=alert(1)>
+- Test in URL params, form fields, headers
+
+### SSRF
+- http://localhost, http://127.0.0.1
+- http://169.254.169.254 (cloud metadata)
+- Test in every URL parameter
+
+### Command Injection
+- ;whoami, |whoami, $(whoami)
+- Test in filename params, search params
+
+### LFI/Path Traversal
+- ../../../../etc/passwd, ..\\..\\..\\windows\\system32
+
+### IDOR
+- Change IDs, UUIDs, usernames in URLs
+- Test horizontal and vertical privilege
+
+## PHASE 5: MANUAL EXPLOITATION
+For each finding, manually exploit to prove impact:
+- Extract data with SQLi
+- Steal cookies with XSS
+- Access internal services with SSRF
+
+THINK OUT OF THE BOX - tools miss 80%% of bugs!
+
+Document everything in add_note.`, target, target, target, target, target)
+
+			s.broadcast(WSEvent{
+				Type:         "target_started",
+				Content:      fmt.Sprintf("[DAST] Scanning URL: %s", target),
+				Target:       target,
+				AgentID:      filepath.Base(s.currentScanDir),
+				TargetIndex:  i + 1,
+				TotalTargets: totalTargets,
+			})
+
+			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter)
+
+			s.broadcast(WSEvent{
+				Type:         "target_completed",
+				Content:      fmt.Sprintf("[DAST] Completed: %s", target),
+				Target:       target,
+				TargetIndex:  i + 1,
+				TotalTargets: totalTargets,
+			})
+			continue
 		} else {
 			// Single site mode - explicitly tell agent to NOT do subdomain enumeration
 			instruction = "This is a SINGLE TARGET scan. Do NOT enumerate subdomains or perform wildcard discovery. Only test the exact target URL provided. Focus on the main domain/IP only. " + instruction
