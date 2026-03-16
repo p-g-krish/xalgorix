@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.2.5"
+const version = "1.2.6"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -355,8 +355,9 @@ button:hover{background:#00b087}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-		// Check if it's a real static file
-		f, err := staticFS.(fs.ReadFileFS).ReadFile(path[1:]) // strip leading /
+		// Check if it's a real static file - strip /static prefix since staticFS already points to static folder
+		strippedPath := strings.TrimPrefix(path, "/static/")
+		f, err := staticFS.(fs.ReadFileFS).ReadFile(strippedPath)
 		if err == nil && f != nil {
 			fileServer.ServeHTTP(w, r)
 			return
