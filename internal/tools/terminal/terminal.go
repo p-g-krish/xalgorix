@@ -269,11 +269,21 @@ func installPackage(pkg string) string {
 	}
 	
 	if goPkg, ok := goTools[pkg]; ok {
-		installCmd := fmt.Sprintf("GOBIN=/root/go/bin go install -v %s 2>&1", goPkg)
+		// Try with GOPROXY first to handle Go version issues
+		installCmd := fmt.Sprintf("GOBIN=/root/go/bin GOPROXY=direct go install -v %s 2>&1", goPkg)
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
 		out, err := cmd.CombinedOutput()
+		
+		// If direct proxy fails, try with version override
+		if err != nil && strings.Contains(string(out), "invalid go version") {
+			// Extract the module and try with -build flag
+			installCmd = fmt.Sprintf("GOBIN=/root/go/bin go install -v -buildflags '-mod=mod' %s 2>&1", goPkg)
+			cmd = exec.CommandContext(ctx, "bash", "-c", installCmd)
+			out, err = cmd.CombinedOutput()
+		}
+		
 		if err != nil {
 			return fmt.Sprintf("[install %s failed: %s]\n%s", pkg, err, truncate(string(out)))
 		}
