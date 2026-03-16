@@ -40,6 +40,9 @@ type Config struct {
 	Telemetry    bool   // XALGORIX_TELEMETRY
 	OTelEndpoint string // XALGORIX_OTEL_ENDPOINT
 
+	// Web Search API
+	GeminiAPIKey string // GEMINI_API_KEY - for web search using Gemini
+
 	// Paths
 	HomeDir   string // ~/.xalgorix
 	SkillsDir string // embedded or local skills directory
@@ -101,6 +104,9 @@ func load() *Config {
 		// Telemetry
 		Telemetry:    envOrBool("XALGORIX_TELEMETRY", true),
 		OTelEndpoint: envOr("XALGORIX_OTEL_ENDPOINT", ""),
+
+		// Web Search API
+		GeminiAPIKey: envOr("GEMINI_API_KEY", ""),
 
 		// Paths
 		HomeDir:   xalgorixHome,

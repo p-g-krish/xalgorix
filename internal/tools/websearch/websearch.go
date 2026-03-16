@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xalgord/xalgorix/internal/config"
 	"github.com/xalgord/xalgorix/internal/tools"
 )
 
@@ -53,8 +54,14 @@ func webSearch(args map[string]string) (tools.Result, error) {
 		fmt.Sscanf(m, "%d", &maxResults)
 	}
 
-	// Try multiple search sources in order of quality
-	results, err := searchBrave(query, maxResults)
+	// Try Gemini first if API key is configured
+	results, err := searchGemini(query, maxResults)
+	if err == nil && len(results) > 0 {
+		return formatResults(query, results), nil
+	}
+
+	// Fallback to Brave
+	results, err = searchBrave(query, maxResults)
 	if err == nil && len(results) > 0 {
 		return formatResults(query, results), nil
 	}
@@ -323,6 +330,99 @@ func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 		}
 		if len(results) >= max {
 			break
+		}
+	}
+
+	return results, nil
+}
+
+// searchGemini uses Google Gemini API for web search
+func searchGemini(query string, max int) ([]searchResult, error) {
+	cfg := config.Get()
+	apiKey := cfg.GeminiAPIKey
+	
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY not configured")
+	}
+
+	// Use Gemini's generateContent with grounding (search)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=%s", apiKey)
+
+	requestBody := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"parts": []map[string]interface{}{
+					{"text": "Search the web for: " + query + ". Provide up to " + fmt.Sprintf("%d", max) + " relevant results with titles, URLs, and brief descriptions."},
+				},
+			},
+		},
+		"tools": []map[string]interface{}{
+			{
+				"google_search": map[string]interface{}{},
+			},
+		},
+	}
+
+	bodyBytes, _ := json.Marshal(requestBody)
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var geminiResp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+
+	if err := json.Unmarshal(body, &geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini response: %w", err)
+	}
+
+	var results []searchResult
+	for _, candidate := range geminiResp.Candidates {
+		for _, part := range candidate.Content.Parts {
+			// Parse the response for search results
+			text := part.Text
+			// Extract URLs and titles from the text
+			lines := strings.Split(text, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, "http") {
+					// Extract URL
+					urlStart := strings.Index(line, "http")
+					if urlStart >= 0 {
+						urlEnd := strings.Index(line[urlStart:], " ")
+						if urlEnd < 0 {
+							urlEnd = len(line[urlStart:])
+						}
+						url := line[urlStart:urlStart+urlEnd]
+						// Clean up URL
+						url = strings.TrimSuffix(url, ".")
+						if len(results) < max {
+							results = append(results, searchResult{
+								Title:   strings.TrimSpace(line[:urlStart]),
+								URL:     url,
+								Snippet: "",
+							})
+						}
+					}
+				}
+			}
 		}
 	}
 

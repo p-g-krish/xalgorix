@@ -186,6 +186,14 @@ xalgorix --target https://example.com
 |----------|-------------|---------|
 | `XALGORIX_API_BASE` | API base URL (auto-detected from provider prefix if not set) | `https://api.openai.com/`, `https://api.anthropic.com`, `https://api.minimax.io/`, `https://your-custom-llm.com/v1` |
 
+#### Optional - Web Search
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | Google Gemini API key for web search | `AIza...` |
+
+> **💡 Web Search:** If `GEMINI_API_KEY` is set, xalgorix will use Gemini for web search. Otherwise falls back to Brave/Google/Bing/DuckDuckGo scraping.
+
 > **💡 Custom Providers:** To use any custom LLM provider, just set `XALGORIX_LLM=custom/modelname` and `XALGORIX_API_BASE=https://your-api-endpoint.com/v1`
 
 #### Supported Provider Prefixes (auto-detected)
