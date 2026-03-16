@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.1.3"
+const version = "1.1.4"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -251,7 +251,7 @@ type Server struct {
 // NewServer creates a new web server.
 func NewServer(cfg *config.Config, port int) *Server {
 	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, "xalgorix-data", "scans")
+	dataDir := filepath.Join(home, "xalgorix-data")
 	// Rate limit from config (defaults: 60 requests per minute)
 	rl := NewRateLimiter(cfg.RateLimitRequests, time.Duration(cfg.RateLimitWindow)*time.Second)
 	
