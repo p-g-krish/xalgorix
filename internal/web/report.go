@@ -14,17 +14,17 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 20)
 
-	// Colors - improved contrast
-	darkBg := [3]int{15, 23, 42}
-	green := [3]int{0, 200, 100} // Darker green for better readability
-	white := [3]int{255, 255, 255}
-	gray := [3]int{148, 163, 184}
-	red := [3]int{220, 53, 69}
-	orange := [3]int{220, 120, 50}
-	amber := [3]int{220, 170, 50}
-	greenLow := [3]int{40, 167, 69}
-	cyan := [3]int{6, 182, 212}
-	sectionBg := [3]int{30, 41, 59}
+	// Colors - dark theme to match UI
+	darkBg := [3]int{15, 23, 42}     // #0f172a - main background
+	green := [3]int{0, 255, 136}      // #00ff88 - accent green
+	white := [3]int{240, 240, 242}    // #f0f0f2 - text
+	gray := [3]int{148, 163, 184}    // muted text
+	red := [3]int{220, 53, 69}       // critical
+	orange := [3]int{220, 120, 50}   // high
+	amber := [3]int{220, 170, 50}    // medium
+	greenLow := [3]int{40, 167, 69}  // low
+	cyan := [3]int{6, 182, 212}      // info
+	sectionBg := [3]int{30, 41, 59}  // #1e293b
 
 	// Helper: set text color
 	setColor := func(c [3]int) {
@@ -79,9 +79,14 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 	pdf.SetFont("Helvetica", "", 12)
 	setColor(gray)
 	pdf.CellFormat(190, 8, "Target", "", 1, "C", false, 0, "")
-	pdf.SetFont("Helvetica", "B", 18)
+	pdf.SetFont("Helvetica", "B", 14)  // Smaller font for long strings
 	setColor(white)
-	pdf.CellFormat(190, 12, scan.Target, "", 1, "C", false, 0, "")
+	// Use MultiCell for long target strings
+	target := scan.Target
+	if len(target) > 50 {
+		pdf.SetFont("Helvetica", "B", 10)
+	}
+	pdf.MultiCell(170, 10, target, "", "C", false)
 
 	// Date
 	pdf.Ln(8)
