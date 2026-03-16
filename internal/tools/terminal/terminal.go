@@ -179,7 +179,7 @@ func runShell(command string, timeoutSec int) (string, int) {
 
 	// Set PATH to include common tool locations
 	cmdEnv := append(os.Environ(), 
-		"PATH=/root/go/bin:/root/.local/bin:"+os.Getenv("PATH"),
+		"PATH=/root/go/bin:/home/vulture/go/bin:/root/.local/bin:"+os.Getenv("PATH"),
 		"GOPATH=/root/go",
 	)
 	
@@ -269,7 +269,7 @@ func installPackage(pkg string) string {
 	}
 	
 	if goPkg, ok := goTools[pkg]; ok {
-		installCmd := fmt.Sprintf("go install -v %s 2>&1", goPkg)
+		installCmd := fmt.Sprintf("GOBIN=/root/go/bin go install -v %s 2>&1", goPkg)
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
