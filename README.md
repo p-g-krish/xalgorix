@@ -277,8 +277,14 @@ Xalgorix supports multiple LLM providers:
 # Focus on specific vulns
 "Focus on SQL Injection and IDOR. Skip XSS."
 
-# Authenticated testing
+# Traditional authenticated testing
 "Login with: admin@email.com / Password123"
+
+# API key authentication
+"API: am_us_pod_474368638921786eec2228b27f..., username: agentmail"
+
+# Email-based service testing  
+"AgentMail credentials: api_key=xxx, email=user@agentmail.to"
 
 # Bug bounty rules
 "This is a HackerOne program. Out of scope: DoS, social engineering."
