@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.10.1"
+const version = "0.10.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -914,7 +914,19 @@ For EACH parameter found, test:
 - Change IDs, UUIDs, usernames in URLs
 - Test horizontal and vertical privilege
 
-## PHASE 5: MANUAL EXPLOITATION
+## PHASE 5: NUCLEI DAST (Run on URLs ONLY!)
+**IMPORTANT: Run nuclei on discovered URLs, NOT on the main domain!**
+
+After crawling, you have a list of URLs in ~/xalgorix-data/*.txt
+- Run nuclei on each URL file:
+  - nuclei -l ~/xalgorix-data/gospider/*.txt -dast -severity critical,high,medium -o ~/xalgorix-data/nuclei_dast.txt
+  - nuclei -l ~/xalgorix-data/katana.txt -dast -severity critical,high -o ~/xalgorix-data/nuclei_katana.txt
+  - nuclei -l ~/xalgorix-data/gau.txt -dast -severity critical,high,medium -o ~/xalgorix-data/nuclei_gau.txt
+  - nuclei -l ~/xalgorix-data/wayback.txt -dast -severity critical,high -o ~/xalgorix-data/nuclei_wayback.txt
+
+DO NOT run: nuclei -u TARGET (that scans the main domain only!)
+
+## PHASE 6: MANUAL EXPLOITATION
 For each finding, manually exploit to prove impact:
 - Extract data with SQLi
 - Steal cookies with XSS
