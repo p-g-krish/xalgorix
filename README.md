@@ -68,39 +68,84 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 
 ## 🆚 Why Xalgorix?
 
-| Feature | Xalgorix | Shannon | Strix | PentestGPT | HexStrike |
-|---------|:--------:|:-------:|:-----:|:----------:|:---------:|
-| **Self-Hosted** | ✅ | ⚠️ SaaS | ✅ | ✅ | ✅ |
-| **Blackbox Testing** | ✅ | ❌ | ✅ | ✅ | ✅ |
-| **Whitebox Testing** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Web UI Dashboard** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Live Real-Time Feed** | ✅ | ❌ | ❌ | ⚠️ Terminal | ❌ |
-| **PDF Reports** | ✅ Auto | ✅ | ✅ | ⚠️ Manual | ❌ |
-| **Discord Alerts** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Browser Automation** | ✅ Playwright | ✅ | ✅ | ✅ | ✅ |
-| **Auto-Install Tools** | ✅ 70+ | ❌ | ⚠️ Docker | ⚠️ Docker | ⚠️ MCP |
-| **Rate Limiting** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Queue/Multi-Target** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Severity Filtering** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Circuit Breaker** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Research Publication** | ❌ | ❌ | ❌ | ✅ USENIX | ❌ |
-| **Requires Source Code** | ❌ | ✅ | ❌ | ❌ | ❌ |
+### Comprehensive Comparison with Open-Source Alternatives
 
-### Key Differences
+| Feature | Xalgorix | Shannon | Strix | PentestGPT | HexStrike | PentAGI | Nebula |
+|---------|:--------:|:------:|:-----:|:----------:|:---------:|:-------:|:------:|
+| **Self-Hosted** | ✅ | ⚠️ SaaS | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Blackbox Testing** | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Whitebox Testing** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| **Web UI Dashboard** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Live Real-Time Feed** | ✅ | ❌ | ❌ | ⚠️ Term | ❌ | ❌ | ❌ |
+| **Chat During Scan** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **PDF Reports Auto** | ✅ | ✅ | ✅ | ⚠️ Manual | ❌ | ❌ | ❌ |
+| **Discord Alerts** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Browser Automation** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Auto-Install Tools** | ✅ 70+ | ❌ | ⚠️ Docker | ⚠️ Docker | ⚠️ MCP | ⚠️ Docker | ⚠️ CLI |
+| **Rate Limiting** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Multi-Target Queue** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Severity Filtering** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Circuit Breaker** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **DAST Mode** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Wildcard Scan** | ✅ | ❌ | ❌ | ⚠️ Manual | ❌ | ⚠️ Manual | ❌ |
+| **CVE Search Built-in** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Exploit Search** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Web Search** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Requires Source Code** | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Bug Bounty Focus** | ✅ | ⚠️ SaaS | ✅ | ✅ | ⚠️ MCP | ⚠️ Docker | ✅ |
+
+### Feature Details
 
 - **Shannon** — Requires source code (white-box only), part of paid Keygraph platform
-- **Strix** — Docker-based, requires Docker, good reports but no UI
-- **PentestGPT** — Published at USENIX Security 2024, Docker-based, terminal-only
+- **Strix** — Docker-based, good for bug bounty, no web UI
+- **PentestGPT** — Published at USENIX Security 2024, terminal-only interface
 - **HexStrike** — MCP server integration, 150+ tools via MCP protocol
+- **PentAGI** — Multi-agent Docker system, complex setup required
+- **Nebula** — CLI assistant, good for quick scans but limited methodology
 
-### Why Xalgorix?
+### Why Xalgorix is the Best Choice?
 
-- **100% Self-Hosted** — No SaaS subscription, runs entirely on your machine
-- **True Blackbox** — Test any target without source code
-- **Rich Web UI** — Dark mode dashboard with live feed, token tracking, vulnerability details
-- **Automated Reports** — Professional PDF reports auto-generated and sent to Discord
-- **Zero Setup** — Auto-installs 70+ security tools with package mapping
-- **Production Ready** — Rate limiting, circuit breaker, queue scanning, authentication
+1. **🎯 Most Complete Web UI**
+   - Only tool with full dashboard, live feed, chat, token tracking
+   - See everything in real-time, interact with agent during scan
+
+2. **🔄 Multiple Scan Modes**
+   - Single: Quick target scan
+   - DAST: Deep URL vulnerability testing  
+   - Wildcard: Subdomain enum → scan each individually
+   - Most comprehensive coverage
+
+3. **🔔 Built-in Notifications**
+   - Discord alerts on start/vuln/complete
+   - PDF reports auto-generated
+
+4. **🛡️ Production Ready**
+   - Rate limiting (protect your IP)
+   - Circuit breaker (auto-block failing tools)
+   - Queue system (scan multiple targets)
+   - Severity filtering (focus on what matters)
+
+5. **🔍 Built-in Research Tools**
+   - CVE search (NIST NVD)
+   - Exploit search (Exploit-DB)
+   - Web search (Gemini/Brave/Google)
+
+6. **💰 100% Free & Open Source**
+   - No SaaS subscription
+   - No per-scan fees
+   - Your data stays local
+
+### Competitive Advantages Summary
+
+| What You Get | Xalgorix | Others |
+|--------------|----------|--------|
+| **Web Dashboard** | ✅ | ❌ Most |
+| **Live Feed + Chat** | ✅ | ❌ |
+| **Auto PDF + Discord** | ✅ | ❌ |
+| **3 Scan Modes** | ✅ | ❌ |
+| **Tool Auto-Install** | ✅ 70+ | ⚠️ Manual |
+| **Production Safety** | ✅ | ❌ |
+| **Free Forever** | ✅ | ✅ |
 
 ---
 
