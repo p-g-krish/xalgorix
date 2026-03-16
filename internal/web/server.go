@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.2.3"
+const version = "1.2.4"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -105,7 +105,7 @@ func rateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip rate limiting for WebSocket and static files
-			if r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/static") {
+			if r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/static") || strings.HasPrefix(r.URL.Path, "/assets") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -366,6 +366,7 @@ button:hover{background:#00b087}
 		fileServer.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/assets/", s.serveAssets)
 	mux.HandleFunc("/api/scan", s.handleScan)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -1774,4 +1775,44 @@ func (s *Server) sendSimpleEmbed(color int, title, description string) {
 		}
 		resp.Body.Close()
 	}()
+}
+
+// Serve assets from assets folder
+func (s *Server) serveAssets(w http.ResponseWriter, r *http.Request) {
+	// Get the file path from the URL
+	path := r.URL.Path
+	path = strings.TrimPrefix(path, "/assets/")
+	
+	// Read from assets folder
+	home, _ := os.UserHomeDir()
+	assetPath := filepath.Join(home, "xalgorix", "assets", path)
+	
+	// Also check local assets folder
+	localAssetPath := filepath.Join(filepath.Dir(os.Args[0]), "..", "assets", path)
+	
+	var data []byte
+	var err error
+	
+	// Try local path first
+	data, err = os.ReadFile(localAssetPath)
+	if err != nil {
+		// Try xalgorix/assets path
+		data, err = os.ReadFile(assetPath)
+	}
+	
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	
+	// Set content type based on extension
+	if strings.HasSuffix(path, ".png") {
+		w.Header().Set("Content-Type", "image/png")
+	} else if strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") {
+		w.Header().Set("Content-Type", "image/jpeg")
+	} else if strings.HasSuffix(path, ".svg") {
+		w.Header().Set("Content-Type", "image/svg+xml")
+	}
+	
+	w.Write(data)
 }
