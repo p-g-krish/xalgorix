@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.10.6"
+const version = "0.10.7"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -683,7 +683,11 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter)
 
 			// Read discovered subdomains from file
-			subdomainsFile := filepath.Join(s.dataDir, "live_subdomains.txt")
+			// Agent saves to ~/xalgorix-data/ but server dataDir is ~/xalgorix-data/scans/
+			// So we need to look in parent directory
+			dataRoot := filepath.Dir(s.dataDir) // /root/xalgorix-data
+			
+			subdomainsFile := filepath.Join(dataRoot, "live_subdomains.txt")
 			subdomainsData, err := os.ReadFile(subdomainsFile)
 			var subdomains []string
 			if err == nil {
@@ -697,12 +701,29 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 
 			// If no subdomains found, try alternative files
 			if len(subdomains) == 0 {
-				altFile := filepath.Join(s.dataDir, "all_discovered_subdomains.txt")
+				altFile := filepath.Join(dataRoot, "all_discovered_subdomains.txt")
 				if data, err := os.ReadFile(altFile); err == nil {
 					for _, line := range strings.Split(string(data), "\n") {
 						line = strings.TrimSpace(line)
 						if line != "" && !strings.Contains(line, "*") {
 							subdomains = append(subdomains, line)
+						}
+					}
+				}
+			}
+			
+			// Also try live_resolved.txt
+			if len(subdomains) == 0 {
+				altFile := filepath.Join(dataRoot, "live_resolved.txt")
+				if data, err := os.ReadFile(altFile); err == nil {
+					for _, line := range strings.Split(string(data), "\n") {
+						line = strings.TrimSpace(line)
+						if line != "" && !strings.Contains(line, " ") && !strings.Contains(line, "*") {
+							// Extract just the domain/IP from dnsx output
+							parts := strings.Fields(line)
+							if len(parts) > 0 {
+								subdomains = append(subdomains, parts[0])
+							}
 						}
 					}
 				}
