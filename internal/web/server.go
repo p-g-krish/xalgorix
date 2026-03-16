@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.1.4"
+const version = "1.1.5"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -700,43 +700,54 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 			// Run discovery phase
 			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter, true, true)
 
-			// Read discovered subdomains from file (now in current scan directory)
-			subdomainsFile := filepath.Join(s.currentScanDir, "live_subdomains.txt")
-			subdomainsData, err := os.ReadFile(subdomainsFile)
+			// Read discovered subdomains from file
+			// Try multiple possible locations and formats
 			var subdomains []string
-			if err == nil {
-				for _, line := range strings.Split(string(subdomainsData), "\n") {
-					line = strings.TrimSpace(line)
-					if line != "" && !strings.Contains(line, " ") {
-						subdomains = append(subdomains, line)
+			possibleFiles := []string{
+				filepath.Join(s.currentScanDir, "live_subdomains.txt"),
+				filepath.Join(s.currentScanDir, "live_resolved.txt"),
+				filepath.Join(s.currentScanDir, "all_discovered_subdomains.txt"),
+			}
+			
+			for _, subdomainsFile := range possibleFiles {
+				subdomainsData, err := os.ReadFile(subdomainsFile)
+				if err == nil {
+					for _, line := range strings.Split(string(subdomainsData), "\n") {
+						line = strings.TrimSpace(line)
+						if line == "" || strings.HasPrefix(line, "#") {
+							continue
+						}
+						// Remove any protocol prefix
+						line = strings.TrimPrefix(line, "http://")
+						line = strings.TrimPrefix(line, "https://")
+						line = strings.TrimPrefix(line, "http[s]://")
+						// Extract domain from common formats: "domain.com" or "domain.com [IP]"
+						parts := strings.Fields(line)
+						if len(parts) > 0 && strings.Contains(parts[0], ".") {
+							subdomains = append(subdomains, parts[0])
+						}
+					}
+					if len(subdomains) > 0 {
+						break
 					}
 				}
 			}
 
-			// If no subdomains found, try alternative files
+			// Also try reading from parent directory as fallback
 			if len(subdomains) == 0 {
-				altFile := filepath.Join(s.currentScanDir, "all_discovered_subdomains.txt")
-				if data, err := os.ReadFile(altFile); err == nil {
-					for _, line := range strings.Split(string(data), "\n") {
-						line = strings.TrimSpace(line)
-						if line != "" && !strings.Contains(line, "*") {
-							subdomains = append(subdomains, line)
-						}
-					}
+				parentFiles := []string{
+					filepath.Join(filepath.Dir(s.currentScanDir), "live_subdomains.txt"),
+					filepath.Join(filepath.Dir(s.currentScanDir), "live_resolved.txt"),
 				}
-			}
-			
-			// Also try live_resolved.txt
-			if len(subdomains) == 0 {
-				altFile := filepath.Join(s.currentScanDir, "live_resolved.txt")
-				if data, err := os.ReadFile(altFile); err == nil {
-					for _, line := range strings.Split(string(data), "\n") {
-						line = strings.TrimSpace(line)
-						if line != "" && !strings.Contains(line, " ") && !strings.Contains(line, "*") {
-							// Extract just the domain/IP from dnsx output
-							parts := strings.Fields(line)
-							if len(parts) > 0 {
-								subdomains = append(subdomains, parts[0])
+				for _, f := range parentFiles {
+					if data, err := os.ReadFile(f); err == nil {
+						for _, line := range strings.Split(string(data), "\n") {
+							line = strings.TrimSpace(line)
+							if line != "" && !strings.HasPrefix(line, "#") {
+								parts := strings.Fields(line)
+								if len(parts) > 0 {
+									subdomains = append(subdomains, parts[0])
+								}
 							}
 						}
 					}
