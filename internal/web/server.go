@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.2.6"
+const version = "1.2.7"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -359,6 +359,8 @@ button:hover{background:#00b087}
 		strippedPath := strings.TrimPrefix(path, "/static/")
 		f, err := staticFS.(fs.ReadFileFS).ReadFile(strippedPath)
 		if err == nil && f != nil {
+			// Rewrite URL to serve from staticFS root (which is already "static")
+			r.URL.Path = "/" + strippedPath
 			fileServer.ServeHTTP(w, r)
 			return
 		}
