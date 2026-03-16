@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.1.6"
+const version = "1.1.7"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -894,6 +894,27 @@ Document EVERYTHING in add_note. THINK before each test. Automated tools are dum
 				})
 
 				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
+
+				// Generate PDF for this subdomain if vulnerabilities found
+				subVulns := reporting.GetVulnerabilities()
+				if len(subVulns) > 0 {
+					subScanRecord := ScanRecord{
+						ID:        filepath.Base(s.currentScanDir),
+						Target:    subdomain,
+						StartedAt: time.Now().Format(time.RFC3339),
+						Status:    "finished",
+						FinishedAt: time.Now().Format(time.RFC3339),
+						Vulns:     []VulnSummary{},
+					}
+					for _, v := range subVulns {
+						subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
+					}
+					reportPath, err := s.generateReport(&subScanRecord)
+					if err == nil {
+						desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(subVulns))
+						s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
+					}
+				}
 
 				s.broadcast(WSEvent{
 					Type:         "target_completed",
