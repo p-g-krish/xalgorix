@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "0.9.8"
+const version = "0.9.9"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -635,7 +635,167 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		// Build the instruction with scan mode context
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
-			instruction = "Perform a wildcard/subdomain enumeration scan. Discover subdomains, enumerate services, and assess each discovered host. " + instruction
+			// PHASE 1: First do comprehensive subdomain enumeration
+			discoveryInstruction := `PHASE 1: COMPREHENSIVE SUBDOMAIN ENUMERATION
+
+Your ONLY task in this phase is to discover ALL subdomains. Do NOT run any vulnerability scans yet.
+
+Execute these commands in order and save ALL results:
+
+# Passive subdomain enumeration (no direct contact)
+1. subfinder -d TARGET -passive -o ~/xalgorix-data/passive_subfinder.txt
+2. curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ~/xalgorix-data/passive_crt.txt
+3. findomain -t TARGET --output ~/xalgorix-data/passive_findomain.txt 2>/dev/null || true
+4. assetfinder --subs-only TARGET | tee ~/xalgorix-data/passive_assetfinder.txt 2>/dev/null || true
+5. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ~/xalgorix-data/passive_dnsbufferover.txt
+
+# Archive enumeration
+6. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ~/xalgorix-data/archive_subdomains.txt
+
+# Active subdomain enumeration (direct contact)
+7. subfinder -d TARGET -all -recursive -o ~/xalgorix-data/active_subfinder.txt
+8. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
+9. amass enum -d TARGET -active -o ~/xalgorix-data/active_amass.txt 2>/dev/null || true
+
+# Merge ALL subdomains
+10. cat ~/xalgorix-data/passive_*.txt ~/xalgorix-data/active_*.txt ~/xalgorix-data/archive_subdomains.txt 2>/dev/null | grep -v '*' | sort -u > ~/xalgorix-data/all_discovered_subdomains.txt
+11. wc -l ~/xalgorix-data/all_discovered_subdomains.txt
+
+# Resolve subdomains to find live hosts
+12. cat ~/xalgorix-data/all_discovered_subdomains.txt | dnsx -silent -a -resp -o ~/xalgorix-data/live_resolved.txt 2>/dev/null || true
+13. cat ~/xalgorix-data/live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ~/xalgorix-data/live_subdomains.txt
+14. wc -l ~/xalgorix-data/live_subdomains.txt
+
+# IMPORTANT: After completing subdomain enumeration, you MUST call add_note with the full list of discovered subdomains (from ~/xalgorix-data/live_subdomains.txt) so they can be queued for individual scanning.
+
+STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue each discovered subdomain for comprehensive vulnerability assessment.`
+
+			s.broadcast(WSEvent{
+				Type:         "target_started",
+				Content:      fmt.Sprintf("[PHASE 1] Discovering subdomains for: %s", target),
+				Target:       target,
+				AgentID:      filepath.Base(s.currentScanDir),
+				TargetIndex:  i + 1,
+				TotalTargets: totalTargets,
+			})
+
+			// Run discovery phase
+			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter)
+
+			// Read discovered subdomains from file
+			subdomainsFile := filepath.Join(s.dataDir, "live_subdomains.txt")
+			subdomainsData, err := os.ReadFile(subdomainsFile)
+			var subdomains []string
+			if err == nil {
+				for _, line := range strings.Split(string(subdomainsData), "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" && !strings.Contains(line, " ") {
+						subdomains = append(subdomains, line)
+					}
+				}
+			}
+
+			// If no subdomains found, try alternative files
+			if len(subdomains) == 0 {
+				altFile := filepath.Join(s.dataDir, "all_discovered_subdomains.txt")
+				if data, err := os.ReadFile(altFile); err == nil {
+					for _, line := range strings.Split(string(data), "\n") {
+						line = strings.TrimSpace(line)
+						if line != "" && !strings.Contains(line, "*") {
+							subdomains = append(subdomains, line)
+						}
+					}
+				}
+			}
+
+			s.broadcast(WSEvent{
+				Type:         "target_completed",
+				Content:      fmt.Sprintf("[PHASE 1] Discovery complete: found %d subdomains. Now scanning each individually.", len(subdomains)),
+				Target:       target,
+				TargetIndex:  i + 1,
+				TotalTargets: totalTargets,
+			})
+
+			// PHASE 2: Scan each subdomain individually with comprehensive vulnerability testing
+			for j, subdomain := range subdomains {
+				if s.stopReq {
+					s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
+					break
+				}
+
+				// Update queue state
+				s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
+
+				// Create scan directory for this subdomain
+				scanDirName = fmt.Sprintf("%s_%s", sanitizeTarget(subdomain), randomSlug())
+				s.currentScanDir = filepath.Join(s.dataDir, scanDirName)
+				os.MkdirAll(s.currentScanDir, 0755)
+
+				// Build comprehensive single-target instruction
+				scanInstruction := fmt.Sprintf(`PHASE 2: COMPREHENSIVE VULNERABILITY SCAN ON: %s
+
+This is a SINGLE TARGET vulnerability assessment. You have unlimited iterations - do NOT stop until you have thoroughly tested everything.
+
+TARGET: %s
+
+Perform these phases in order:
+
+## PHASE 2A: RECON & SERVICE DISCOVERY
+- nmap -sV -sC -T4 -A -p- --open -oN ~/xalgorix-data/nmap.txt https://%s
+- whatweb -v -a 3 https://%s 2>/dev/null
+- httpx -silent -status-code -title -tech-detect -follow-redirects -o ~/xalgorix-data/httpx.txt
+
+## PHASE 2B: WEB CRAWLING
+- gospider -s https://%s --depth 3 -o ~/xalgorix-data/gospider/ 2>/dev/null
+- katana -u https://%s -d 5 -jc -kf -ef css,png,jpg -o ~/xalgorix-data/katana.txt 2>/dev/null
+- gau %s --threads 5 -o ~/xalgorix-data/gau.txt
+- waybackurls %s | sort -u | tee ~/xalgorix-data/wayback.txt
+
+## PHASE 2C: PARAMETER DISCOVERY
+- paramspider -d %s -o ~/xalgorix-data/params.txt 2>/dev/null || true
+- arjun -u https://%s -m GET -w ~/wordlists parameters.txt -t 20 -o ~/xalgorix-data/arjun.txt 2>/dev/null || true
+
+## PHASE 2D: VULNERABILITY TESTING
+Test EVERY parameter, EVERY endpoint, EVERY form. Use these tools:
+- nikto -h https://%s
+- sqlmap -u TARGET --risk=3 --level=5 --batch --smart
+- xssed -u https://%s
+- gf patterns: ssrf, sqli, xss, lfi, rce, idor on all URLs
+- kxss on all parameters
+- commix -u https://%s --all
+
+## PHASE 2E: DETAILED TESTING
+For each finding, dig deeper:
+- If SQLi found: enumerate databases, tables, extract data (use LIMIT)
+- If XSS found: test cookie theft, session hijacking
+- If RCE found: test for reverse shell, read sensitive files
+- If SSRF found: test internal ports, cloud metadata
+- Test for IDOR on all user-controlled inputs
+- Test all authentication endpoints for bypasses
+
+Document EVERYTHING in add_note. Do NOT stop until you have exhausted all attack vectors.`, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain)
+
+				s.broadcast(WSEvent{
+					Type:         "target_started",
+					Content:      fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
+					Target:       subdomain,
+					AgentID:      filepath.Base(s.currentScanDir),
+					TargetIndex:  j + 1,
+					TotalTargets: len(subdomains),
+				})
+
+				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter)
+
+				s.broadcast(WSEvent{
+					Type:         "target_completed",
+					Content:      fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
+					Target:       subdomain,
+					TargetIndex:  j + 1,
+					TotalTargets: len(subdomains),
+				})
+			}
+
+			continue // Skip the regular scan below since we did wildcard handling above
 		} else {
 			// Single site mode - explicitly tell agent to NOT do subdomain enumeration
 			instruction = "This is a SINGLE TARGET scan. Do NOT enumerate subdomains or perform wildcard discovery. Only test the exact target URL provided. Focus on the main domain/IP only. " + instruction
