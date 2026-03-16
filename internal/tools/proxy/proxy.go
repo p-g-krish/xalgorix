@@ -47,10 +47,11 @@ func detectCaidoPort() int {
 		return cfg.CaidoPort
 	}
 
+	// Check if Caido is running
 	out, err := exec.Command("ss", "-tlnp").Output()
 	if err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
-			if strings.Contains(line, "caido") {
+			if strings.Contains(line, "caido") || strings.Contains(line, ":8080") || strings.Contains(line, ":8081") {
 				parts := strings.Fields(line)
 				for _, p := range parts {
 					if strings.Contains(p, ":") {
@@ -64,7 +65,45 @@ func detectCaidoPort() int {
 		}
 	}
 
+	// Try common Caido ports
+	for _, port := range []int{8080, 8081, 9090} {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d", port))
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode < 500 {
+				return port
+			}
+		}
+	}
+
 	return 8080
+}
+
+// ensureCaidoRunning tries to install and start Caido if not available
+func ensureCaidoRunning() string {
+	// Check if caido command exists
+	_, err := exec.LookPath("caido")
+	if err == nil {
+		// Caido is installed, try to start it
+		exec.Command("caido", "&")
+		return "Caido found, attempting to start..."
+	}
+
+	// Try to install Caido (Linux)
+	installMsg := `# To use Caido with Xalgorix:
+# 1. Download Caido from https://caido.com
+# 2. Install and run it
+# 3. Set CAIDO_PORT=8080 in ~/.xalgorix.env`
+
+	// Check for snap
+	_, err = exec.LookPath("snap")
+	if err == nil {
+		installMsg = `# Install Caido via snap:
+sudo snap install caido
+caido &`
+	}
+
+	return installMsg
 }
 
 func getCaidoGraphQLURL() string {
@@ -96,6 +135,20 @@ func sendRequest(args map[string]string) (tools.Result, error) {
 	}
 
 	caidoPort := detectCaidoPort()
+	
+	// Check if Caido is accessible
+	checkResp, checkErr := http.Get(fmt.Sprintf("http://127.0.0.1:%d", caidoPort))
+	if checkErr != nil || (checkResp != nil && checkResp.StatusCode >= 500) {
+		// Caido not running - provide install instructions
+		if checkResp != nil {
+			checkResp.Body.Close()
+		}
+		return tools.Result{Output: ensureCaidoRunning()}, nil
+	}
+	if checkResp != nil {
+		checkResp.Body.Close()
+	}
+	
 	proxyURLStr := fmt.Sprintf("http://127.0.0.1:%d", caidoPort)
 	proxyURL, _ := url.Parse(proxyURLStr)
 

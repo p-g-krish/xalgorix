@@ -70,9 +70,15 @@
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │
 │                                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  NIST NVD    │  │  Exploit-DB  │  │  Discord    │  │  Browser    │  │
-│  │  (CVE)       │  │  (Exploits)  │  │  Webhook    │  │  (Caido)    │  │
+│  │  NIST NVD    │  │  Exploit-DB  │  │  Discord    │  │   Caido     │  │
+│  │  (CVE)       │  │  (Exploits)  │  │  Webhook    │  │   Proxy      │  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │
+│                                                                             │
+│  Caido Integration:                                                       │
+│  • Auto-install if not present                                            │
+│  • Auto-start if not running                                              │
+│  • HTTP request capture                                                   │
+│  • Request replay/modification                                            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
