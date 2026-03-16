@@ -69,6 +69,7 @@ var packageMap = map[string]string{
 	"pip3":    "python3-pip",
 	"pip":     "python3-pip",
 	"scrapling": "pipx install scrapling",  // Web scraping with anti-bot bypass
+	"python-venv": "python3-venv",  // For venv-based Python tools
 	// General
 	"tree":    "tree",
 	"unzip":   "unzip",

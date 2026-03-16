@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.0.7"
+const version = "1.0.8"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -794,8 +794,8 @@ THEN THINK: What technologies did you find? What are their known vulnerabilities
 - waybackurls %s | sort -u | tee ~/xalgorix-data/wayback.txt
 
 # Scrapling - Anti-bot/WAF bypass crawling (CRITICAL for protected sites!)
-- pip install scrapling 2>/dev/null || true
-- scrapling --url "https://%s" --depth 2 --output ~/xalgorix-data/scrapling.json 2>/dev/null || true
+- python3 -m venv ~/xalgorix-venv && source ~/xalgorix-venv/bin/activate && pip install scrapling 2>/dev/null || true
+- source ~/xalgorix-venv/bin/activate && scrapling --url "https://%s" --depth 2 --output ~/xalgorix-data/scrapling.json 2>/dev/null || true
 - Extract URLs from scrapling output and test them
 
 THEN MANUALLY CHECK:
@@ -908,7 +908,7 @@ TARGET URL: %s
   - gospider -s %s --depth 2
   - katana -u %s -d 3 -jc
   - hakrawler -url %s -depth 2
-  - scrapling --url %s --depth 2 --output ~/xalgorix-data/scrapling.json 2>/dev/null || true
+  - source ~/xalgorix-venv/bin/activate && scrapling --url %s --depth 2 --output ~/xalgorix-data/scrapling.json 2>/dev/null || true
 - Collect ALL URLs discovered
 
 ## PHASE 3: PARAMETER DISCOVERY
