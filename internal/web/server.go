@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.1.1"
+const version = "1.1.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -685,7 +685,7 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 			})
 
 			// Run discovery phase
-			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter, true)
+			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter, true, true)
 
 			// Read discovered subdomains from file
 			// Agent saves to ~/xalgorix-data/ but server dataDir is ~/xalgorix-data/scans/
@@ -873,7 +873,7 @@ Document EVERYTHING in add_note. THINK before each test. Automated tools are dum
 					TotalTargets: len(subdomains),
 				})
 
-				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false)
+				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
 
 				s.broadcast(WSEvent{
 					Type:         "target_completed",
@@ -977,7 +977,7 @@ Document everything in add_note.`, target, target, target, target, target)
 				TotalTargets: totalTargets,
 			})
 
-			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter, true)
+			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter, true, true)
 
 			s.broadcast(WSEvent{
 				Type:         "target_completed",
@@ -1001,7 +1001,7 @@ Document everything in add_note.`, target, target, target, target, target)
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan([]string{target}, instruction, req.SeverityFilter, true)
+		s.runSingleScan([]string{target}, instruction, req.SeverityFilter, true, true)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -1048,7 +1048,7 @@ Document everything in add_note.`, target, target, target, target, target)
 	})
 }
 
-func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string, resetState bool) {
+func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool) {
 	// Reset global state from previous scans (skip for wildcard mode to accumulate vulns)
 	if resetState {
 		reporting.ResetVulnerabilities()
@@ -1213,21 +1213,22 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 	s.saveScanRecord(&scanRecord)
 	s.liveScanRecord = nil
 
-	// Generate PDF report
-	reportPath, err := s.generateReport(&scanRecord)
-	if err != nil {
-		log.Printf("Failed to generate PDF report: %v", err)
-		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s (PDF generation failed)", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST")))
-	} else {
-		log.Printf("PDF report saved: %s", reportPath)
-		// Send Discord with PDF
-		desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST"))
-		s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
-		// Notify via WebSocket that report is ready
-		s.broadcast(WSEvent{
-			Type:    "report_ready",
-			Content: fmt.Sprintf("/api/report/%s", scanRecord.ID),
-		})
+	// Generate PDF report only if requested (skip in wildcard mode - generate only at end of all subdomains)
+	if generateReportAtEnd && len(scanRecord.Vulns) > 0 {
+		reportPath, err := s.generateReport(&scanRecord)
+		if err != nil {
+			log.Printf("Failed to generate PDF report: %v", err)
+		} else {
+			log.Printf("PDF report saved: %s", reportPath)
+			// Send Discord with PDF
+			desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST"))
+			s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
+			// Notify via WebSocket that report is ready
+			s.broadcast(WSEvent{
+				Type:    "report_ready",
+				Content: fmt.Sprintf("/api/report/%s", scanRecord.ID),
+			})
+		}
 	}
 }
 
