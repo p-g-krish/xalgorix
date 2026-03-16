@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.0.3"
+const version = "1.0.4"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -1008,12 +1008,12 @@ Document everything in add_note.`, target, target, target, target, target)
 	s.clearQueueState()
 	s.running = false
 
-	// Discord: scan finished with PDF
+	// Discord: scan finished
 	vulns := reporting.GetVulnerabilities()
 	
-	// Generate PDF report
+	// Only generate PDF if vulnerabilities were found
 	reportPath := ""
-	if s.liveScanRecord != nil {
+	if len(vulns) > 0 && s.liveScanRecord != nil {
 		s.liveScanRecord.Status = "finished"
 		s.liveScanRecord.FinishedAt = time.Now().Format(time.RFC3339)
 		s.liveScanRecord.Vulns = vulnSummaries(vulns)
@@ -1022,12 +1022,16 @@ Document everything in add_note.`, target, target, target, target, target)
 		}
 	}
 	
-	// Send Discord with PDF
-	desc := fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST"))
-	if reportPath != "" {
-		s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
+	// Send Discord notification
+	if len(vulns) > 0 {
+		desc := fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST"))
+		if reportPath != "" {
+			s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
+		} else {
+			s.sendDiscord(0x3b82f6, "✅ Scan Finished - Vulnerabilities Found", desc)
+		}
 	} else {
-		s.sendDiscord(0x3b82f6, "✅ Scan Finished", desc)
+		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** 0 found\n**Completed at:** %s", totalTargets, time.Now().Format("15:04:05 MST")))
 	}
 
 	s.broadcast(WSEvent{
