@@ -43,13 +43,15 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | Feature | Description |
 |---------|-------------|
 | 🤖 **Autonomous Agent** | LLM-driven pentesting with 20-phase methodology |
+| 🎯 **Single Scan** | Scan a single URL/target with full vulnerability testing |
+| 🔍 **DAST Scan** | Scan specific URLs with deep vulnerability testing |
+| 🌐 **Wildcard Scan** | Enum all subdomains → scan each individually |
 | 🎯 **Severity Filter** | Filter by Critical/High/Medium/Low/Info |
 | 🚫 **Out of Scope** | Define targets to exclude from testing |
 | 🔒 **Safety First** | Blocks destructive commands, encoding bypass detection |
 | 🔌 **Circuit Breaker** | Auto-blocks failing tools after 5 attempts |
 | 🌐 **Web UI** | Dark mode dashboard with live feed & token tracking |
 | 💬 **Chat During Scan** | Send messages to agent while scan is running |
-| 🌐 **Browser + Caido** | Playwright/Chromium with Caido proxy integration |
 | 📱 **Mobile Ready** | Works on phones & tablets |
 | 💾 **Scan Persistence** | Resume interrupted scans after restart |
 | 📊 **PDF Reports** | Professional pentest reports auto-generated |
@@ -59,7 +61,7 @@ Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLM
 | 🔐 **Authentication** | Optional login protection for dashboard |
 | 🔍 **CVE Search** | Query NIST NVD database for CVE details |
 | 🐛 **Exploit Search** | Search Exploit-DB for public exploits |
-| 🔎 **Web Search** | Google, Bing, Brave, DuckDuckGo integration |
+| 🔎 **Web Search** | Gemini, Brave, Google, Bing, DuckDuckGo integration |
 | ✅ **Tool Pre-Check** | Auto-installs missing tools before running |
 
 ---
@@ -260,7 +262,8 @@ Xalgorix supports multiple LLM providers:
 | Feature | Usage |
 |---------|-------|
 | 🎯 **Single Scan** | Enter URL, click Start |
-| 🌐 **Wildcard Scan** | Select "Wildcard" mode for subdomain enum |
+| 🔍 **DAST Scan** | Select "DAST" mode for URL vulnerability testing |
+| 🌐 **Wildcard Scan** | Select "Wildcard" mode for subdomain enum → each subdomain gets full scan |
 | 📂 **Multi-Target** | Upload a `.txt` file with one target per line |
 | 🎯 **Severity Filter** | Check only Critical/High to skip Low/Info |
 | 🚫 **Out of Scope** | Exclude targets from testing |
