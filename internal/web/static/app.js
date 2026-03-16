@@ -710,22 +710,25 @@
             targets = targetInput.split(',').map(t => t.trim()).filter(Boolean);
         }
 
-        // Reset state
-        iterCount = 0; toolCount = 0; vulnCount = 0; eventCount = 0;
-        currentTargetIdx = 0; totalTargets = targets.length;
-        Object.keys(toolUsage).forEach(k => delete toolUsage[k]);
-        
-        ['stat-iter', 'stat-tools', 'stat-vulns'].forEach(id => {
-            document.getElementById(id).textContent = '0';
-        });
-        
-        document.getElementById('feed-body').innerHTML = '';
-        document.getElementById('vuln-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Scanning...</div></li>';
-        document.getElementById('tools-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Waiting...</div></li>';
-        
-        // Remove report button if exists
-        const reportBtn = document.querySelector('.report-btn');
-        if (reportBtn) reportBtn.remove();
+        // Reset state (only if not continuing a wildcard scan)
+        const isWildcard = targets.length === 1 && targetInput.includes(',') === false && document.querySelector('#scan-mode')?.value === 'wildcard';
+        if (!isWildcard || document.getElementById('feed-body').children.length === 0) {
+            iterCount = 0; toolCount = 0; vulnCount = 0; eventCount = 0;
+            currentTargetIdx = 0; totalTargets = targets.length;
+            Object.keys(toolUsage).forEach(k => delete toolUsage[k]);
+            
+            ['stat-iter', 'stat-tools', 'stat-vulns'].forEach(id => {
+                document.getElementById(id).textContent = '0';
+            });
+            
+            document.getElementById('feed-body').innerHTML = '';
+            document.getElementById('vuln-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Scanning...</div></li>';
+            document.getElementById('tools-list').innerHTML = '<li class="empty-state" style="padding:20px 0"><div class="empty-title">Waiting...</div></li>';
+            
+            // Remove report button if exists
+            const reportBtn = document.querySelector('.report-btn');
+            if (reportBtn) reportBtn.remove();
+        }
 
         scanRunning = true;
         toggleButtons(true);
