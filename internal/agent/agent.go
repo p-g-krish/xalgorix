@@ -811,6 +811,26 @@ done
 
 ---
 
+### AUTHENTICATED BROWSER TESTING (if credentials provided in instructions)
+If credentials are provided in the instructions (e.g., "Login with: admin@email.com / Password123"), perform authenticated testing:
+
+1. **Login via Browser** - Use browser_playwright or send_request:
+   - Navigate to login page
+   - Fill username/password fields  
+   - Submit form and capture session cookies
+
+2. **Test Authenticated Endpoints** - After login:
+   - Browse to all authenticated pages using browser
+   - Test IDOR on user-specific endpoints (change IDs in URLs)
+   - Test privilege escalation (can I access admin panel?)
+   - Test access controls (can user A access user B's data?)
+
+3. **Session Analysis**:
+   - Capture auth cookies/tokens
+   - Test session fixation
+   - Test session timeout handling
+   - Test cookie theft via XSS after login
+
 ### PHASE 5: Authentication & Session Testing
 - Test login forms for SQLi: ' OR 1=1--, admin'--,  " OR ""="
 - Test for username enumeration (different error messages for valid vs invalid users)
