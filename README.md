@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-MIT-00ff88?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/xalgorix)
 
-<p><i>Point it at a target. It does the rest.</i></p>
+<p><i>The most powerful open-source AI autonomous pentesting agent.</i></p>
 
 </div>
 
@@ -30,11 +30,31 @@
 
 ---
 
-## 🚀 What is Xalgorix?
+## 🚀 Xalgorix — The Most Powerful Open-Source AI Pentesting Agent
 
-Xalgorix is a fully autonomous AI-powered penetration testing agent. It uses LLMs to drive comprehensive security assessments — from reconnaissance to exploitation — using real security tools, with zero human intervention.
+**Xalgorix is the most comprehensive open-source autonomous penetration testing platform.** It combines the power of AI with 70+ security tools to deliver enterprise-grade pentesting — completely free.
+
+### Why Xalgorix is #1
+
+| Claim | Reality |
+|-------|---------|
+| **Most Complete** | ✅ Only open-source tool with Web UI + Live Feed + Chat + PDF + Discord |
+| **Most Thorough** | ✅ 3 scan modes: Single → DAST → Wildcard (subdomain enum → scan each) |
+| **Most Automated** | ✅ Auto-installs tools, auto-generates PDF, auto-sends Discord alerts |
+| **Most Flexible** | ✅ Works with any LLM (OpenAI, Anthropic, DeepSeek, MiniMax, Google, Groq, Ollama) |
+| **Most Production-Ready** | ✅ Rate limiting, circuit breaker, queue system, severity filtering |
 
 > **TL;DR:** Give it a target URL, and Xalgorix will find vulnerabilities, generate a professional PDF report, and send Discord alerts — all automatically.
+
+### What Makes Xalgorix Different?
+
+- **🚀 Autonomous** — Give it a target, watch it work. No human intervention needed.
+- **🧠 AI-Powered** — Leverages LLMs for intelligent decision-making.
+- **🔓 100% Free** — No SaaS, no per-scan fees, no limits.
+- **🏠 Self-Hosted** — Your data never leaves your machine.
+- **⚡ Lightning Fast** — Uses maximum threads, comprehensive flags.
+- **🎯 Precision** — Only reports exploitable vulnerabilities, not false positives.
+- **🛡️ Safe** — Blocks destructive commands, rate limiting protects your IP.
 
 ---
 
