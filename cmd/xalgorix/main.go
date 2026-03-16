@@ -17,7 +17,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.10.2"
+const version = "0.10.3"
 
 func main() {
 	args := parseArgs()
@@ -374,7 +374,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root
-Environment="PATH=%s/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/root/go/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="GOPATH=/root/go"
 EnvironmentFile=%s/.xalgorix.env
 ExecStart=%s --web
 Restart=always
@@ -382,7 +383,7 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-`, goPath, os.Getenv("HOME"), installPath)
+`, os.Getenv("HOME"), installPath)
 	// Try to write service file (requires sudo)
 	servicePath := "/etc/systemd/system/xalgorix.service"
 	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)

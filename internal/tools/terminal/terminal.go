@@ -177,8 +177,15 @@ func runShell(command string, timeoutSec int) (string, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
+	// Set PATH to include common tool locations
+	cmdEnv := append(os.Environ(), 
+		"PATH=/root/go/bin:/root/.local/bin:"+os.Getenv("PATH"),
+		"GOPATH=/root/go",
+	)
+	
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = cfg.Workspace
+	cmd.Env = cmdEnv
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
