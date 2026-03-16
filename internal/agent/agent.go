@@ -811,24 +811,29 @@ done
 
 ---
 
-### AUTHENTICATED BROWSER TESTING (if credentials provided in instructions)
-If credentials are provided in the instructions (e.g., "Login with: admin@email.com / Password123"), perform authenticated testing:
+### AUTHENTICATED TESTING (if credentials/API keys provided in instructions)
 
-1. **Login via Browser** - Use browser_playwright or send_request:
-   - Navigate to login page
-   - Fill username/password fields  
-   - Submit form and capture session cookies
+**Option 1: Traditional Login (username/password)**
+If credentials like "Login with: admin@email.com / Password123":
+1. Use browser to navigate to login page
+2. Fill username/password fields and submit
+3. Capture session cookies
 
-2. **Test Authenticated Endpoints** - After login:
-   - Browse to all authenticated pages using browser
-   - Test IDOR on user-specific endpoints (change IDs in URLs)
-   - Test privilege escalation (can I access admin panel?)
-   - Test access controls (can user A access user B's data?)
+**Option 2: API Key Authentication**
+If API credentials provided (e.g., "API: am_us_xxx, username: agentmail"):
+1. Look for API documentation or endpoints
+2. Try authentication endpoints: /api/auth, /api/login, /api/token
+3. Test with: curl -H "Authorization: Bearer API_KEY" or -H "X-API-Key: API_KEY"
+4. Test authenticated API endpoints with the token
+5. Look for IDOR in API endpoints (change IDs in API calls)
 
-3. **Session Analysis**:
-   - Capture auth cookies/tokens
-   - Test session fixation
-   - Test session timeout handling
+**Option 3: Email-based Service**
+If service provides email access (e.g., AgentMail):
+1. Check for IMAP/SMTP or web-based access
+2. Look for API endpoints to read/send emails
+3. Test for authorization bypass on email access
+
+### Test Authenticated Endpoints
    - Test cookie theft via XSS after login
 
 ### PHASE 5: Authentication & Session Testing
