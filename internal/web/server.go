@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.0.9"
+const version = "1.1.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -683,7 +683,7 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 			})
 
 			// Run discovery phase
-			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter)
+			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter, true)
 
 			// Read discovered subdomains from file
 			// Agent saves to ~/xalgorix-data/ but server dataDir is ~/xalgorix-data/scans/
@@ -871,7 +871,7 @@ Document EVERYTHING in add_note. THINK before each test. Automated tools are dum
 					TotalTargets: len(subdomains),
 				})
 
-				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter)
+				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false)
 
 				s.broadcast(WSEvent{
 					Type:         "target_completed",
@@ -975,7 +975,7 @@ Document everything in add_note.`, target, target, target, target, target)
 				TotalTargets: totalTargets,
 			})
 
-			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter)
+			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter, true)
 
 			s.broadcast(WSEvent{
 				Type:         "target_completed",
@@ -999,7 +999,7 @@ Document everything in add_note.`, target, target, target, target, target)
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan([]string{target}, instruction, req.SeverityFilter)
+		s.runSingleScan([]string{target}, instruction, req.SeverityFilter, true)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -1046,10 +1046,12 @@ Document everything in add_note.`, target, target, target, target, target)
 	})
 }
 
-func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string) {
-	// Reset global state from previous scans
-	reporting.ResetVulnerabilities()
-	notes.ResetNotes()
+func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string, resetState bool) {
+	// Reset global state from previous scans (skip for wildcard mode to accumulate vulns)
+	if resetState {
+		reporting.ResetVulnerabilities()
+		notes.ResetNotes()
+	}
 
 	events := make(chan agent.Event, 512)
 	s.agent = agent.NewAgent(s.cfg, "XalgorixAgent", events)
