@@ -182,9 +182,22 @@ func runShell(command string, timeoutSec int) (string, int) {
 	if homeDir == "" {
 		homeDir = "/root"
 	}
+	
+	// Also check GOPATH
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = homeDir + "/go"
+	}
+	
+	// Build dynamic PATH including all possible tool locations
+	dynamicPath := goPath + "/bin:" + homeDir + "/go/bin:" + homeDir + "/.local/bin"
+	
+	// Also add paths from other common locations
+	dynamicPath += ":/home/*/go/bin:/home/*/.local/bin"
+	
 	cmdEnv := append(os.Environ(), 
-		"PATH="+homeDir+"/go/bin:"+homeDir+"/.local/bin:"+os.Getenv("PATH"),
-		"GOPATH="+homeDir+"/go",
+		"PATH="+dynamicPath+":"+os.Getenv("PATH"),
+		"GOPATH="+goPath,
 	)
 	
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -275,6 +288,12 @@ func installPackage(pkg string) string {
 	homeDir := os.Getenv("HOME")
 	if homeDir == "" {
 		homeDir = "/root"
+	}
+	
+	// Use GOPATH if set, otherwise default
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = homeDir + "/go"
 	}
 	
 	if goPkg, ok := goTools[pkg]; ok {

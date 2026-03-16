@@ -17,7 +17,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "0.10.7"
+const version = "0.10.8"
 
 func main() {
 	args := parseArgs()
@@ -374,7 +374,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root
-Environment="PATH=$HOME/go/bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=$HOME/go/bin:/home/vulture/go/bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="GOPATH=/root/.go"
 Environment="GOPATH=/root/go"
 EnvironmentFile=%s/.xalgorix.env
 ExecStart=%s --web
