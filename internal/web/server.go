@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.1.0"
+const version = "1.1.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -599,6 +599,8 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		return
 	}
 
+	// Clear any previous queue state
+	s.clearQueueState()
 	s.running = true
 	s.stopReq = false
 	if req.DiscordWebhook != "" {
