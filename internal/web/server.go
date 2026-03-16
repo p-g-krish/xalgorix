@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.2.4"
+const version = "1.2.5"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -366,7 +366,6 @@ button:hover{background:#00b087}
 		fileServer.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("/ws", s.handleWebSocket)
-	mux.HandleFunc("/assets/", s.serveAssets)
 	mux.HandleFunc("/api/scan", s.handleScan)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
