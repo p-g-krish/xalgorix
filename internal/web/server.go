@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -642,29 +642,32 @@ Your ONLY task in this phase is to discover ALL subdomains. Do NOT run any vulne
 
 Execute these commands in order and save ALL results:
 
-# Passive subdomain enumeration (no direct contact)
-1. subfinder -d TARGET -passive -o ~/xalgorix-data/passive_subfinder.txt
-2. curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ~/xalgorix-data/passive_crt.txt
-3. findomain -t TARGET --output ~/xalgorix-data/passive_findomain.txt 2>/dev/null || true
-4. assetfinder --subs-only TARGET | tee ~/xalgorix-data/passive_assetfinder.txt 2>/dev/null || true
-5. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ~/xalgorix-data/passive_dnsbufferover.txt
+# Passive subdomain enumeration (no direct contact) - ALWAYS USE MAX THREADS AND ALL FLAGS!
+1. subfinder -d TARGET -passive -recursive -o ~/xalgorix-data/passive_subfinder.txt
+2. subfinder -d TARGET -all -recursive -silent -o ~/xalgorix-data/passive_subfinder2.txt
+3. curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ~/xalgorix-data/passive_crt.txt
+4. findomain -t TARGET --output ~/xalgorix-data/passive_findomain.txt 2>/dev/null || true
+5. assetfinder --subs-only TARGET | tee ~/xalgorix-data/passive_assetfinder.txt 2>/dev/null || true
+6. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ~/xalgorix-data/passive_dnsbufferover.txt
+7. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ~/xalgorix-data/passive_dnsbufferover.txt
 
 # Archive enumeration
-6. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ~/xalgorix-data/archive_subdomains.txt
+8. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ~/xalgorix-data/archive_subdomains.txt
 
-# Active subdomain enumeration (direct contact)
-7. subfinder -d TARGET -all -recursive -o ~/xalgorix-data/active_subfinder.txt
-8. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
-9. amass enum -d TARGET -active -o ~/xalgorix-data/active_amass.txt 2>/dev/null || true
+# Active subdomain enumeration (direct contact) - USE MAXIMUM THREADS AND WORDLISTS!
+9. subfinder -d TARGET -all -recursive -threads 100 -o ~/xalgorix-data/active_subfinder.txt
+10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -threads 100 -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
+11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -threads 100 -o ~/xalgorix-data/active_wordlist2.txt 2>/dev/null || true
+12. amass enum -d TARGET -active -passive -o ~/xalgorix-data/active_amass.txt 2>/dev/null || true
 
 # Merge ALL subdomains
-10. cat ~/xalgorix-data/passive_*.txt ~/xalgorix-data/active_*.txt ~/xalgorix-data/archive_subdomains.txt 2>/dev/null | grep -v '*' | sort -u > ~/xalgorix-data/all_discovered_subdomains.txt
-11. wc -l ~/xalgorix-data/all_discovered_subdomains.txt
+13. cat ~/xalgorix-data/passive_*.txt ~/xalgorix-data/active_*.txt ~/xalgorix-data/archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ~/xalgorix-data/all_discovered_subdomains.txt
+14. wc -l ~/xalgorix-data/all_discovered_subdomains.txt
 
-# Resolve subdomains to find live hosts
-12. cat ~/xalgorix-data/all_discovered_subdomains.txt | dnsx -silent -a -resp -o ~/xalgorix-data/live_resolved.txt 2>/dev/null || true
-13. cat ~/xalgorix-data/live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ~/xalgorix-data/live_subdomains.txt
-14. wc -l ~/xalgorix-data/live_subdomains.txt
+# Resolve subdomains to find live hosts - USE MAX THREADS!
+15. cat ~/xalgorix-data/all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ~/xalgorix-data/live_resolved.txt 2>/dev/null || true
+16. cat ~/xalgorix-data/live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ~/xalgorix-data/live_subdomains.txt
+17. wc -l ~/xalgorix-data/live_subdomains.txt
 
 # IMPORTANT: After completing subdomain enumeration, you MUST call add_note with the full list of discovered subdomains (from ~/xalgorix-data/live_subdomains.txt) so they can be queued for individual scanning.
 

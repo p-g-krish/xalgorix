@@ -342,7 +342,12 @@ func (a *Agent) buildSystemPrompt(targets []string, instruction string) string {
 ### Execution Rules
 1. You MUST call tools using the XML format below. NEVER describe what you would do — DO IT.
 2. Every response MUST contain at least one tool call. NO EXCEPTIONS.
-3. NEVER run bare/basic commands. ALWAYS use comprehensive flags, save outputs to ~/xalgorix-data/.
+3. **ALWAYS use maximum threads and comprehensive flags!** Examples:
+   - subfinder -d TARGET -all -recursive -threads 100
+   - dnsx -silent -a -resp -threads 100
+   - nuclei -u TARGET -severity critical,high,medium -rl 100
+   - ffuf -u TARGET/FUZZ -w wordlist.txt -t 100 -mc 200,301,302,403
+   - NEVER run: subfinder -d TARGET (without -all -recursive -threads!)
 4. If a tool or command fails, try alternatives. NEVER give up after one failure.
 5. Minimum 50 iterations for a thorough assessment. Don't rush to finish.
 6. Use notes (add_note) to track discovered endpoints, parameters, and findings. Read notes before each phase.
