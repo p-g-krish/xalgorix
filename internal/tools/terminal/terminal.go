@@ -177,10 +177,14 @@ func runShell(command string, timeoutSec int) (string, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	// Set PATH to include common tool locations
+	// Set PATH to include common tool locations (dynamic - works for any user)
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir = "/root"
+	}
 	cmdEnv := append(os.Environ(), 
-		"PATH=/root/go/bin:/home/vulture/go/bin:/root/.local/bin:"+os.Getenv("PATH"),
-		"GOPATH=/root/go",
+		"PATH="+homeDir+"/go/bin:"+homeDir+"/.local/bin:"+os.Getenv("PATH"),
+		"GOPATH="+homeDir+"/go",
 	)
 	
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -268,9 +272,14 @@ func installPackage(pkg string) string {
 		"assetfinder": "github.com/tomnomnom/assetfinder@latest",
 	}
 	
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir = "/root"
+	}
+	
 	if goPkg, ok := goTools[pkg]; ok {
 		// Try with GOPROXY first to handle Go version issues
-		installCmd := fmt.Sprintf("GOBIN=/root/go/bin GOPROXY=direct go install -v %s 2>&1", goPkg)
+		installCmd := fmt.Sprintf("GOBIN=%s/go/bin GOPROXY=direct go install -v %s 2>&1", homeDir, goPkg)
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
