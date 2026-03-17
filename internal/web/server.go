@@ -660,10 +660,9 @@ Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.
 8. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
 
 # Active subdomain enumeration (direct contact) - USE MAXIMUM THREADS AND WORDLISTS!
-9. subfinder -d TARGET -all -recursive -threads 100 -o ./active_subfinder.txt
-10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -threads 100 -o ./active_bruteforce.txt 2>/dev/null || true
-11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -threads 100 -o ./active_wordlist2.txt 2>/dev/null || true
-12. amass enum -d TARGET -active -passive -o ./active_amass.txt 2>/dev/null || true
+9. subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
+10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
+11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 100 -o ./active_wordlist2.txt 2>/dev/null || true
 
 # Merge ALL subdomains
 13. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
@@ -673,10 +672,10 @@ Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.
 15. cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
 16. cat ./live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ./live_subdomains.txt
 17. wc -l ./live_subdomains.txt
-9. subfinder -d TARGET -all -recursive -threads 100 -o ./active_subfinder.txt
-10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -threads 100 -o ./active_bruteforce.txt 2>/dev/null || true
-11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -threads 100 -o ./active_wordlist2.txt 2>/dev/null || true
-12. amass enum -d TARGET -active -passive -o ./active_amass.txt 2>/dev/null || true
+9. subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
+10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
+11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 100 -o ./active_wordlist2.txt 2>/dev/null || true
+
 
 # Merge ALL subdomains
 13. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt

@@ -343,11 +343,11 @@ func (a *Agent) buildSystemPrompt(targets []string, instruction string) string {
 1. You MUST call tools using the XML format below. NEVER describe what you would do — DO IT.
 2. Every response MUST contain at least one tool call. NO EXCEPTIONS.
 3. **ALWAYS use maximum threads and comprehensive flags!** Examples:
-   - subfinder -d TARGET -all -recursive -threads 100
+   - subfinder -d TARGET -all -recursive -t 100
    - dnsx -silent -a -resp -threads 100
    - nuclei -u TARGET -severity critical,high,medium -rl 100
    - ffuf -u TARGET/FUZZ -w wordlist.txt -t 100 -mc 200,301,302,403
-   - NEVER run: subfinder -d TARGET (without -all -recursive -threads!)
+   - NEVER run: subfinder -d TARGET (without -all -recursive -t !)
 4. If a tool or command fails, try alternatives. NEVER give up after one failure.
 5. Minimum 50 iterations for a thorough assessment. Don't rush to finish.
 6. Use notes (add_note) to track discovered endpoints, parameters, and findings. Read notes before each phase.
@@ -534,7 +534,6 @@ curl -s "https://subdomain-takeover.cybersploit.com/subdomains/TARGET.json" 2>/d
 subfinder -d TARGET -all -recursive -o ~/xalgorix-data/active_subfinder.txt
 # Use wordlists for brute-force
 subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
-amass enum -d TARGET -active -o ~/xalgorix-data/active_amass.txt 2>/dev/null || true
 
 # Merge ALL subdomains (passive + active)
 cat ~/xalgorix-data/all_passive_subdomains.txt ~/xalgorix-data/active_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_subdomains.txt
