@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -174,16 +175,41 @@ func executeCommand(args map[string]string) (tools.Result, error) {
 	return tools.Result{Output: output}, nil
 }
 
+func ensureVenv() {
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir = "/root"
+	}
+	venvPath := filepath.Join(homeDir, "venv")
+	
+	// Check if venv exists
+	if _, err := os.Stat(venvPath); os.IsNotExist(err) {
+		// Create venv
+		fmt.Println("Creating Python virtual environment at ~/venv...")
+		cmd := exec.Command("python3", "-m", "venv", venvPath)
+		cmd.Run()
+	}
+}
+
 func runShell(command string, timeoutSec int) (string, int) {
+	// Ensure venv exists
+	ensureVenv()
+	
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir = "/root"
+	}
+	venvActivate := "source " + filepath.Join(homeDir, "venv", "bin", "activate") + " && "
+	
+	// Wrap command with venv activation
+	command = venvActivate + command
+	
 	cfg := config.Get()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
 	// Set PATH to include common tool locations (dynamic - works for any user)
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		homeDir = "/root"
-	}
+	// homeDir already set above
 	
 	// Also check GOPATH
 	goPath := os.Getenv("GOPATH")
