@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.2.9"
+const version = "1.3.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -632,9 +632,10 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		// Update queue state after each target
 		s.saveQueueState(req.Targets, i, req.Instruction, req.ScanMode)
 
-		// Create per-target scan directory with random slug
+		// Create per-target scan directory with nested structure: target/date/randomslug
+		dateDir := time.Now().Format("2006-01-02")
 		scanDirName := fmt.Sprintf("%s_%s", sanitizeTarget(target), randomSlug())
-		s.currentScanDir = filepath.Join(s.dataDir, scanDirName)
+		s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 		os.MkdirAll(s.currentScanDir, 0755)
 
 		// Build the instruction with scan mode context
@@ -774,9 +775,10 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 				// Update queue state
 				s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
 
-				// Create scan directory for this subdomain
+				// Create scan directory for this subdomain (nested: target/date/subdomain_randomslug)
+				dateDir := time.Now().Format("2006-01-02")
 				scanDirName = fmt.Sprintf("%s_%s", sanitizeTarget(subdomain), randomSlug())
-				s.currentScanDir = filepath.Join(s.dataDir, scanDirName)
+				s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 				os.MkdirAll(s.currentScanDir, 0755)
 
 				// Build comprehensive single-target instruction
