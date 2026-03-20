@@ -1472,3 +1472,29 @@ details.settings-toggle[open] .settings-panel {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
+
+/* AgentMail panel full width */
+#agentmail-settings[open] .settings-panel {
+  display: flex !important;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+#agentmail-panel {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+#agentmail-panel .input-field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#agentmail-panel .btn {
+  width: 100%;
+  box-sizing: border-box;
+}
