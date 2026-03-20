@@ -1484,8 +1484,10 @@ details.settings-toggle[open] .settings-panel {
 }
 
 #agentmail-panel .input-field {
-  width: 100%;
+  width: 100% !important;
+  min-width: unset !important;
   box-sizing: border-box;
+  flex: unset !important;
 }
 
 #agentmail-panel .btn {
