@@ -150,11 +150,11 @@
 
           <details class="settings-toggle" id="agentmail-settings">
             <summary>📧 AgentMail (Email Verification)</summary>
-            <div class="settings-panel" id="agentmail-panel" style="display: flex !important; flex-direction: column; gap: 8px; width: 100%; max-width: none;">
+            <div id="agentmail-panel">
               <input type="text" id="agentmail-pod" class="input-field" placeholder="AgentMail Pod (e.g. am_us_pod_47)">
               <input type="password" id="agentmail-apikey" class="input-field" placeholder="AgentMail API Key">
               <button class="btn btn-secondary" onclick="saveAgentMail()">💾 Save</button>
-              <div id="agentmail-status" style="font-size: 11px; color: var(--success); text-align: center;"></div>
+              <div id="agentmail-status"></div>
             </div>
           </details>
         </div>
