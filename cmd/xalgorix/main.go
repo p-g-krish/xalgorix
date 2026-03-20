@@ -17,7 +17,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/web"
 )
 
-const version = "1.4.15"
+const version = "1.4.16"
 
 func main() {
 	args := parseArgs()

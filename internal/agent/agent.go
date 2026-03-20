@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os/exec"
@@ -52,6 +53,8 @@ type Agent struct {
 	events   chan Event
 	maxIter  int
 	stopped  bool
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // NewAgent creates a new agent.
@@ -81,7 +84,11 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 		registry: reg,
 		events:   events,
 		maxIter:  cfg.MaxIterations,
+		ctx:     context.Background(),
 	}
+
+	// Create cancellable context
+	a.ctx, a.cancel = context.WithCancel(a.ctx)
 
 	agentsgraph.Register(reg, func(subName string, targets []string, task string) (string, error) {
 		subEvents := make(chan Event, 256)
@@ -132,7 +139,7 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
-	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped; iter++ {
+	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		if a.maxIter > 0 {
 			a.emit(Event{Type: "thinking", Content: fmt.Sprintf("Iteration %d/%d", iter+1, a.maxIter), TotalTokens: tokenCount()})
 		} else {
@@ -234,6 +241,11 @@ Call a tool NOW in your next response.`
 // Stop signals the agent to stop and kills all running processes.
 func (a *Agent) Stop() {
 	a.stopped = true
+	
+	// Cancel context to stop any blocking operations
+	if a.cancel != nil {
+		a.cancel()
+	}
 	
 	// Kill all running terminal processes
 	terminal.KillAllProcesses()
