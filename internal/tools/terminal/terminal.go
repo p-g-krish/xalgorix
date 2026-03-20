@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -19,6 +21,31 @@ import (
 )
 
 const maxOutputLen = 20000
+
+// Global process tracker for stop functionality
+var (
+	processGroup  = make(map[*exec.Cmd]context.CancelFunc)
+	processMutex sync.Mutex
+)
+
+// KillAllProcesses kills all running processes (called on stop)
+func KillAllProcesses() {
+	processMutex.Lock()
+	defer processMutex.Unlock()
+	for cmd, cancel := range processGroup {
+		if cmd != nil && cmd.Process != nil {
+			// Kill process group first
+			if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
+				syscall.Kill(-pgid, syscall.SIGKILL)
+			}
+			cmd.Process.Kill()
+		}
+		if cancel != nil {
+			cancel()
+		}
+	}
+	processGroup = make(map[*exec.Cmd]context.CancelFunc)
+}
 
 // Common command → package mappings for auto-install.
 var packageMap = map[string]string{
@@ -231,12 +258,27 @@ func runShell(command string, timeoutSec int) (string, int) {
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = cfg.Workspace
 	cmd.Env = cmdEnv
-
+	
+	// Create new process group for this command
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+	
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	
+	// Register process for tracking
+	processMutex.Lock()
+	processGroup[cmd] = cancel
+	processMutex.Unlock()
 
 	err := cmd.Run()
+
+	// Unregister process after completion
+	processMutex.Lock()
+	delete(processGroup, cmd)
+	processMutex.Unlock()
 
 	exitCode := 0
 	if err != nil {

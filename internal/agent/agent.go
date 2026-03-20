@@ -231,9 +231,12 @@ Call a tool NOW in your next response.`
 	a.emit(Event{Type: "finished", Content: "Agent reached maximum iterations", TotalTokens: tokenCount()})
 }
 
-// Stop signals the agent to stop.
+// Stop signals the agent to stop and kills all running processes.
 func (a *Agent) Stop() {
 	a.stopped = true
+	
+	// Kill all running terminal processes
+	terminal.KillAllProcesses()
 }
 
 // SendMessage allows sending additional messages to the agent during a scan
