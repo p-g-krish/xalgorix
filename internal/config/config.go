@@ -43,6 +43,10 @@ type Config struct {
 	// Web Search API
 	GeminiAPIKey string // GEMINI_API_KEY - for web search using Gemini
 
+	// AgentMail - temp email for sign-up verification
+	AgentMailAPIKey string // AGENTMAIL_API_KEY - AgentMail API key
+	AgentMailPod     string // AGENTMAIL_POD - AgentMail pod (e.g., "am_us_pod_47")
+
 	// Paths
 	HomeDir   string // ~/.xalgorix
 	SkillsDir string // embedded or local skills directory
@@ -107,6 +111,8 @@ func load() *Config {
 
 		// Web Search API
 		GeminiAPIKey: envOr("GEMINI_API_KEY", ""),
+		AgentMailAPIKey: envOr("AGENTMAIL_API_KEY", ""),
+		AgentMailPod: envOr("AGENTMAIL_POD", ""),
 
 		// Paths
 		HomeDir:   xalgorixHome,

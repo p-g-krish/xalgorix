@@ -22,6 +22,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/proxy"
 	"github.com/xalgord/xalgorix/internal/tools/python"
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
+	"github.com/xalgord/xalgorix/internal/tools/agentmail"
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 	"github.com/xalgord/xalgorix/internal/tools/websearch"
 )
@@ -70,6 +71,7 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 	finish.Register(reg)
 	python.Register(reg)
 	websearch.Register(reg)
+	agentmail.Register(reg)
 
 	a := &Agent{
 		ID:       fmt.Sprintf("agent_%d", time.Now().UnixNano()),
