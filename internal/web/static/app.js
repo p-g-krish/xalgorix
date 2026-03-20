@@ -978,6 +978,39 @@
         }
     };
 
+    // AgentMail Settings
+    window.saveAgentMail = async function() {
+        const pod = document.getElementById('agentmail-pod').value.trim();
+        const apiKey = document.getElementById('agentmail-apikey').value.trim();
+        
+        if (!pod || !apiKey) {
+            const statusEl = document.getElementById('agentmail-status');
+            statusEl.textContent = '❌ Please fill in both Pod and API Key';
+            statusEl.style.color = 'var(--danger)';
+            setTimeout(() => statusEl.textContent = '', 3000);
+            return;
+        }
+        
+        try {
+            const resp = await fetch('/api/settings/agentmail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pod, apiKey })
+            });
+            const data = await resp.json();
+            
+            const statusEl = document.getElementById('agentmail-status');
+            statusEl.textContent = '✅ Saved AgentMail settings';
+            statusEl.style.color = 'var(--success)';
+            setTimeout(() => statusEl.textContent = '', 3000);
+        } catch (err) {
+            console.error('Failed to save AgentMail settings:', err);
+            const statusEl = document.getElementById('agentmail-status');
+            statusEl.textContent = '❌ Failed to save';
+            statusEl.style.color = 'var(--danger)';
+        }
+    };
+
     async function loadRateLimitSettings() {
         try {
             const resp = await fetch('/api/settings/rate-limit');
@@ -1013,6 +1046,24 @@
     // Initialize
     window.onProviderChange();
     loadRateLimitSettings();
+
+    // Load AgentMail settings
+    async function loadAgentMailSettings() {
+        try {
+            const resp = await fetch('/api/settings/agentmail');
+            const data = await resp.json();
+            if (data.pod) {
+                document.getElementById('agentmail-pod').value = data.pod;
+            }
+            if (data.apiKey) {
+                document.getElementById('agentmail-apikey').value = data.apiKey;
+                document.getElementById('agentmail-apikey').placeholder = '••••••••';
+            }
+        } catch (err) {
+            console.log('Could not load AgentMail settings');
+        }
+    }
+    loadAgentMailSettings();
     initSeverityCheckboxes();
     connect();
     

@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.4.1"
+const version = "1.4.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -378,6 +378,7 @@ button:hover{background:#00b087}
 	mux.HandleFunc("/api/upload-instructions", s.handleUploadInstructions)
 	mux.HandleFunc("/api/report/", s.handleDownloadReport)
 	mux.HandleFunc("/api/settings/rate-limit", s.handleRateLimit)
+	mux.HandleFunc("/api/settings/agentmail", s.handleAgentMailSettings)
 	mux.HandleFunc("/api/queue/status", s.handleQueueStatus)
 	mux.HandleFunc("/api/queue/resume", s.handleQueueResume)
 	mux.HandleFunc("/api/queue/clear", s.handleQueueClear)
@@ -1447,6 +1448,64 @@ func (s *Server) handleRateLimit(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]int{
 			"requests": req.Requests,
 			"window":   req.Window,
+		})
+		
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAgentMailSettings handles GET and POST for AgentMail settings.
+func (s *Server) handleAgentMailSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	switch r.Method {
+	case "GET":
+		// Return current AgentMail settings (without exposing the full API key)
+		apiKey := s.cfg.AgentMailAPIKey
+		masked := ""
+		if len(apiKey) > 8 {
+			masked = "****" + apiKey[len(apiKey)-8:]
+		} else if apiKey != "" {
+			masked = "****"
+		}
+		json.NewEncoder(w).Encode(map[string]string{
+			"pod":     s.cfg.AgentMailPod,
+			"apiKey":  masked,
+		})
+		
+	case "POST":
+		// Update AgentMail settings
+		var req struct {
+			Pod    string `json:"pod"`
+			APIKey string `json:"apiKey"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		
+		// Update config
+		s.cfg.AgentMailPod = req.Pod
+		s.cfg.AgentMailAPIKey = req.APIKey
+		
+		// Save to env file for persistence
+		home, _ := os.UserHomeDir()
+		envFile := filepath.Join(home, ".xalgorix.env")
+		envContent := fmt.Sprintf(`# Xalgorix Environment
+AGENTMAIL_POD=%s
+AGENTMAIL_API_KEY=%s
+`, req.Pod, req.APIKey)
+		
+		if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
+			log.Printf("Failed to save AgentMail settings: %v", err)
+		}
+		
+		log.Printf("AgentMail settings updated: pod=%s", req.Pod)
+		
+		json.NewEncoder(w).Encode(map[string]string{
+			"pod":    req.Pod,
+			"apiKey": "****" + req.APIKey[len(req.APIKey)-8:],
 		})
 		
 	default:
