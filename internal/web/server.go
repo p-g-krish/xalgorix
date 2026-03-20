@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.4.14"
+const version = "1.4.15"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -691,6 +691,10 @@ Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.
 # IMPORTANT: After completing subdomain enumeration, you MUST call add_note with the full list of discovered subdomains (from ./live_subdomains.txt) so they can be queued for individual scanning.
 
 STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue each discovered subdomain for comprehensive vulnerability assessment.`
+			// Append user's custom instructions if provided
+			if req.Instruction != "" {
+				discoveryInstruction += "\n\n" + req.Instruction
+			}
 
 			s.broadcast(WSEvent{
 				Type:         "target_started",
@@ -888,6 +892,10 @@ For each finding, MANUALLY exploit:
 - IDOR: View all data, not just one user's
 
 Document EVERYTHING in add_note. THINK before each test. Automated tools are dumb - YOU are smart.`, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain)
+			// Append user's custom instructions if provided
+			if req.Instruction != "" {
+				scanInstruction += "\n\n" + req.Instruction
+			}
 
 				s.broadcast(WSEvent{
 					Type:         "target_started",
@@ -1012,6 +1020,10 @@ For each finding, manually exploit to prove impact:
 
 THINK OUT OF THE BOX - tools miss 80%% of bugs!
 
+			// Append user's custom instructions if provided
+			if req.Instruction != "" {
+				dastInstruction += "\n\n" + req.Instruction
+			}
 Document everything in add_note.`, target, target, target, target, target)
 
 			s.broadcast(WSEvent{
