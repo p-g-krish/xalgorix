@@ -1473,28 +1473,27 @@ details.settings-toggle[open] .settings-panel {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* AgentMail panel full width */
-#agentmail-settings[open] .settings-panel {
+/* AgentMail panel - single column layout */
+#agentmail-settings .settings-panel {
   display: flex !important;
   flex-direction: column;
+  grid-template-columns: 1fr !important;
   width: 100%;
   max-width: none;
   box-sizing: border-box;
 }
 
-#agentmail-panel {
-  display: flex !important;
-  flex-direction: column;
-  gap: 8px;
+#agentmail-settings .settings-panel .input-field {
   width: 100%;
+  box-sizing: border-box;
+  min-width: unset;
 }
 
-#agentmail-panel .input-field {
+#agentmail-settings .settings-panel .btn {
   width: 100%;
   box-sizing: border-box;
 }
 
-#agentmail-panel .btn {
+#agentmail-settings .settings-panel #agentmail-status {
   width: 100%;
-  box-sizing: border-box;
 }
