@@ -47,13 +47,13 @@
     };
 
     const LLM_PROVIDERS = {
+        openai: { model: 'gpt-5.4', prefix: 'openai', base: 'https://api.openai.com/v1' },
+        anthropic: { model: 'claude-sonnet-4.6', prefix: 'anthropic', base: 'https://api.anthropic.com/' },
+        google: { model: 'gemini-3.1-pro', prefix: 'google', base: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+        deepseek: { model: 'deepseek-v4', prefix: 'deepseek', base: 'https://api.deepseek.com/' },
+        groq: { model: 'llama-4', prefix: 'groq', base: 'https://api.groq.com/openai/v1' },
         minimax: { model: 'MiniMax-M2.5', prefix: 'minimax', base: 'https://api.minimax.io/' },
-        openai: { model: 'gpt-4o', prefix: 'openai', base: 'https://api.openai.com/v1' },
-        deepseek: { model: 'deepseek-chat', prefix: 'deepseek', base: 'https://api.deepseek.com/' },
-        anthropic: { model: 'claude-sonnet-4-20250514', prefix: 'anthropic', base: 'https://api.anthropic.com/' },
-        google: { model: 'gemini-2.5-flash', prefix: 'google', base: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
-        groq: { model: 'llama-3.3-70b-versatile', prefix: 'groq', base: 'https://api.groq.com/openai/v1' },
-        ollama: { model: 'llama3', prefix: 'ollama', base: 'http://localhost:11434/v1' },
+        ollama: { model: 'llama3.3', prefix: 'ollama', base: 'http://localhost:11434/v1' },
         custom: { model: '', prefix: '', base: '' },
     };
 

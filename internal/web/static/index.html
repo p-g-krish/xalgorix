@@ -116,16 +116,16 @@
             <summary>🤖 LLM Provider Settings</summary>
             <div class="settings-panel" id="llm-settings-panel">
               <select id="llm-provider" class="input-field" onchange="onProviderChange()">
-                <option value="minimax">MiniMax</option>
                 <option value="openai">OpenAI</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="anthropic">Anthropic</option>
+                <option value="anthropic">Anthropic (Claude)</option>
                 <option value="google">Google Gemini</option>
+                <option value="deepseek">DeepSeek</option>
                 <option value="groq">Groq</option>
+                <option value="minimax">MiniMax</option>
                 <option value="ollama">Ollama (Local)</option>
                 <option value="custom">Custom Provider</option>
               </select>
-              <input type="text" id="llm-model" class="input-field" placeholder="Model (e.g. MiniMax-M2.5)">
+              <input type="text" id="llm-model" class="input-field" placeholder="Model (e.g. gpt-5.4, claude-sonnet-4.6)">
               <input type="password" id="llm-apikey" class="input-field" placeholder="API Key">
               <input type="text" id="llm-apibase" class="input-field" placeholder="API Base URL">
             </div>
