@@ -83,6 +83,8 @@
 | 🐛 **Exploit Search** | Search Exploit-DB for public exploits |
 | 🔎 **Web Search** | Gemini, Brave, Google, Bing, DuckDuckGo integration |
 | ✅ **Tool Pre-Check** | Auto-installs missing tools before running |
+| 📧 **AgentMail** | Built-in email for sign-up verification & OTP |
+| 🛡️ **Python venv** | Auto-creates ~/venv for Python tools |
 
 ---
 
@@ -527,11 +529,13 @@ The auto-generated report includes:
 ## 📁 Data Storage
 
 ```
-~/xalgorix-data/scans/
-├── example.com_abc123/
-│   └── scan.json
-├── target.io_def456/
-│   └── scan.json
+~/xalgorix-data/
+└── target.com/
+    └── 2026-01-15/
+        └── example.com_abc123/
+            └── scan.json
+        └── target.io_def456/
+            └── scan.json
 └── queue_state.json
 ```
 
