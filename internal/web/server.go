@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "1.5.2"
+const version = "1.5.3"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -696,6 +696,9 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 			if req.Instruction != "" {
 				discoveryInstruction += "\n\n" + req.Instruction
 			}
+
+			// Replace TARGET placeholder with actual target
+			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)
 
 			s.broadcast(WSEvent{
 				Type:         "target_started",
