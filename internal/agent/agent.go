@@ -503,34 +503,34 @@ The more you discover in reconnaissance, the more attack surface you have to tes
 # Use multiple passive sources for comprehensive coverage
 
 # Certificate Transparency logs
-curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ~/xalgorix-data/passive_crt.txt
+curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
 
 # DNS aggregators (passive)
-subfinder -d TARGET -passive -o ~/xalgorix-data/passive_subfinder.txt
-findomain -t TARGET --output ~/xalgorix-data/passive_findomain.txt 2>/dev/null || true
-assetfinder --subs-only TARGET | tee ~/xalgorix-data/passive_assetfinder.txt
+subfinder -d TARGET -o ./passive_subfinder.txt
+findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
+assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt
 
 # Passive DNS aggregation
-curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ~/xalgorix-data/passive_dnsbufferover.txt
-curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ~/xalgorix-data/passive_dnsbufferover.txt
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
 
 # Shodan DNS enumeration (if API key available)
 # shodan dns subdomain TARGET 2>/dev/null || true
 
 # Bing.com DNS search (passive)
 # Use search engines to find subdomains
-curl -s "https://www.bing.com/search?q=site:target.com" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ~/xalgorix-data/passive_bing.txt
+curl -s "https://www.bing.com/search?q=site:target.com" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ./passive_bing.txt
 
 # Google DNS enumeration (passive)
 # Use Google to find subdomains
-curl -s "https://www.google.com/search?q=site:target.com&num=500" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ~/xalgorix-data/passive_google.txt
+curl -s "https://www.google.com/search?q=site:target.com&num=500" | grep -oP 'href="https?://[^"]+' | grep target.com | cut -d'/' -f3 | sort -u >> ./passive_google.txt
 
 # Merge all passive sources
-cat ~/xalgorix-data/passive_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_passive_subdomains.txt
-wc -l ~/xalgorix-data/all_passive_subdomains.txt
+cat ./passive_*.txt 2>/dev/null | sort -u > ./all_passive_subdomains.txt
+wc -l ./all_passive_subdomains.txt
 
 # Archive enumeration (PASSIVE - using historical data)
-curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ~/xalgorix-data/archive_subdomains.txt
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
 
 # GitHub Dorks (find exposed secrets, APIs, infrastructure)
 # Use GitHub search to find target-related repos
@@ -548,34 +548,34 @@ curl -s "https://subdomain-takeover.cybersploit.com/subdomains/TARGET.json" 2>/d
 ## 1B: ACTIVE RECON (Direct contact with target)
 ` + "`" + `bash` + "`" + `
 # Active subdomain enumeration
-subfinder -d TARGET -all -recursive -o ~/xalgorix-data/active_subfinder.txt
+subfinder -d TARGET -all -recursive -o ./active_subfinder.txt
 # Use wordlists for brute-force
-subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ~/xalgorix-data/active_bruteforce.txt 2>/dev/null || true
+subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -o ./active_bruteforce.txt 2>/dev/null || true
 
 # Merge ALL subdomains (passive + active)
-cat ~/xalgorix-data/all_passive_subdomains.txt ~/xalgorix-data/active_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_subdomains.txt
-wc -l ~/xalgorix-data/all_subdomains.txt
+cat ./all_passive_subdomains.txt ./active_*.txt 2>/dev/null | sort -u > ./all_subdomains.txt
+wc -l ./all_subdomains.txt
 
 # DNS Resolution - verify which subdomains are alive
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -a -resp -o ~/xalgorix-data/dns_resolved.txt
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -aaaa -resp -o ~/xalgorix-data/dns_resolved_ipv6.txt 2>/dev/null || true
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -mx -resp -o ~/xalgorix-data/dns_mx.txt 2>/dev/null || true
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -txt -resp -o ~/xalgorix-data/dns_txt.txt 2>/dev/null || true
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -ns -resp -o ~/xalgorix-data/dns_ns.txt 2>/dev/null || true
+cat ./all_subdomains.txt | dnsx -silent -a -resp -o ./dns_resolved.txt
+cat ./all_subdomains.txt | dnsx -silent -aaaa -resp -o ./dns_resolved_ipv6.txt 2>/dev/null || true
+cat ./all_subdomains.txt | dnsx -silent -mx -resp -o ./dns_mx.txt 2>/dev/null || true
+cat ./all_subdomains.txt | dnsx -silent -txt -resp -o ./dns_txt.txt 2>/dev/null || true
+cat ./all_subdomains.txt | dnsx -silent -ns -resp -o ./dns_ns.txt 2>/dev/null || true
 
 # HTTP Probing - check which hosts are live and get info
-cat ~/xalgorix-data/all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ~/xalgorix-data/live_hosts.txt
-cat ~/xalgorix-data/live_hosts.txt | grep -E "^\[.*\]" | cut -d' ' -f1 > ~/xalgorix-data/live_urls.txt
-wc -l ~/xalgorix-data/live_hosts.txt
+cat ./all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ./live_hosts.txt
+cat ./live_hosts.txt | grep -E "^\[.*\]" | cut -d' ' -f1 > ./live_urls.txt
+wc -l ./live_hosts.txt
 
 # Port Scanning - comprehensive
-nmap -sV -sC -T4 -A -p- --open -oN ~/xalgorix-data/nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
-nmap -sU -T4 --top-ports 200 -oN ~/xalgorix-data/nmap_udp.txt TARGET
+nmap -sV -sC -T4 -A -p- --open -oN ./nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
+nmap -sU -T4 --top-ports 200 -oN ./nmap_udp.txt TARGET
 
 # Technology fingerprinting
 whatweb -v -a 3 https://TARGET 2>/dev/null
 wappalyzer https://TARGET 2>/dev/null || true
-curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ~/xalgorix-data/headers.txt
+curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ./headers.txt
 
 # WAF detection
 wafw00f https://TARGET -a
@@ -583,35 +583,35 @@ wafw00f https://TARGET -a
 ## 1C: WEB CRAWLING & URL DISCOVERY
 ` + "`" + `bash` + "`" + `
 # Crawling & URL discovery (use ALL tools, merge results)
-gospider -s https://TARGET --depth 3 -o ~/xalgorix-data/gospider/ 2>/dev/null
-katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ~/xalgorix-data/katana_urls.txt 2>/dev/null
-hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ~/xalgorix-data/hakrawler.txt
+gospider -s https://TARGET --depth 3 -o ./gospider/ 2>/dev/null
+katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ./katana_urls.txt 2>/dev/null
+hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ./hakrawler.txt
 
 # URL & archive mining (use ALL tools, merge results)
-gau TARGET --threads 5 --o ~/xalgorix-data/gau_urls.txt
-waymore -i TARGET -mode U -oU ~/xalgorix-data/waymore_urls.txt 2>/dev/null
-waybackurls TARGET | sort -u | tee ~/xalgorix-data/wayback_urls.txt
-curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original" | jq -r '.[].original' 2>/dev/null | sort -u >> ~/xalgorix-data/wayback_urls.txt
+gau TARGET --threads 5 --o ./gau_urls.txt
+waymore -i TARGET -mode U -oU ./waymore_urls.txt 2>/dev/null
+waybackurls TARGET | sort -u | tee ./wayback_urls.txt
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original" | jq -r '.[].original' 2>/dev/null | sort -u >> ./wayback_urls.txt
 
-cat ~/xalgorix-data/wayback_urls.txt ~/xalgorix-data/gau_urls.txt ~/xalgorix-data/waymore_urls.txt ~/xalgorix-data/katana_urls.txt ~/xalgorix-data/hakrawler.txt ~/xalgorix-data/gospider/*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_urls.txt
-wc -l ~/xalgorix-data/all_urls.txt
+cat ./wayback_urls.txt ./gau_urls.txt ./waymore_urls.txt ./katana_urls.txt ./hakrawler.txt ./gospider/*.txt 2>/dev/null | sort -u > ./all_urls.txt
+wc -l ./all_urls.txt
 
 ## 1D: PARAMETER DISCOVERY
 ` + "`" + `bash` + "`" + `
 # Parameter discovery
-paramspider -d TARGET -o ~/xalgorix-data/paramspider_urls.txt 2>/dev/null
-cat ~/xalgorix-data/all_urls.txt ~/xalgorix-data/paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ~/xalgorix-data/urls_with_params.txt
-cat ~/xalgorix-data/all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ~/xalgorix-data/all_params.txt
-wc -l ~/xalgorix-data/all_params.txt
+paramspider -d TARGET -o ./paramspider_urls.txt 2>/dev/null
+cat ./all_urls.txt ./paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ./urls_with_params.txt
+cat ./all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ./all_params.txt
+wc -l ./all_params.txt
 
 # Hidden parameter discovery (CRITICAL)
-cat ~/xalgorix-data/live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
-  arjun -u "$url" --stable -o ~/xalgorix-data/arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
+cat ./live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
+  arjun -u "$url" --stable -o ./arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
 done
 
 # Extract JS files and analyze
-cat ~/xalgorix-data/all_urls.txt | grep -E "\.js$" | sort -u > ~/xalgorix-data/js_files.txt
-cat ~/xalgorix-data/js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ~/xalgorix-data/js_secrets.txt
+cat ./all_urls.txt | grep -E "\.js$" | sort -u > ./js_files.txt
+cat ./js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ./js_secrets.txt
 
 ## 1E: DNS & INFRASTRUCTURE
 ` + "`" + `bash` + "`" + `
@@ -639,7 +639,7 @@ whois TARGET | grep -i "AS\|Origin\|NetName" | head -5 || true
 # Use recon-ng or LinkedIn search
 
 # Email enumeration (passive)
-theHarvester -d TARGET -b all -f ~/xalgorix-data/emails.html 2>/dev/null || true
+theHarvester -d TARGET -b all -f ./emails.html 2>/dev/null || true
 
 # S3 bucket enumeration (passive)
 # Use cloud_enum or s3scanner
@@ -653,8 +653,8 @@ theHarvester -d TARGET -b all -f ~/xalgorix-data/emails.html 2>/dev/null || true
 # Use pastenewspaper or dumpmon
 
 # COMBINE ALL FINDINGS
-cat ~/xalgorix-data/*subdomains*.txt ~/xalgorix-data/*urls*.txt 2>/dev/null | sort -u > ~/xalgorix-data/complete_inventory.txt
-wc -l ~/xalgorix-data/complete_inventory.txt
+cat ./*subdomains*.txt ./*urls*.txt 2>/dev/null | sort -u > ./complete_inventory.txt
+wc -l ./complete_inventory.txt
 
 # NOTE: After this phase, you should have:
 # - All subdomains (passive + active)
@@ -667,57 +667,57 @@ wc -l ~/xalgorix-data/complete_inventory.txt
 
 ` + "`" + `bash` + "`" + `
 # Subdomain enumeration (use ALL tools, merge results)
-subfinder -d TARGET -all -recursive -o ~/xalgorix-data/subs_subfinder.txt
-findomain -t TARGET -o ~/xalgorix-data/subs_findomain.txt 2>/dev/null
-assetfinder --subs-only TARGET | tee ~/xalgorix-data/subs_assetfinder.txt
-cat ~/xalgorix-data/subs_*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_subdomains.txt
-wc -l ~/xalgorix-data/all_subdomains.txt
+subfinder -d TARGET -all -recursive -o ./subs_subfinder.txt
+findomain -t TARGET -o ./subs_findomain.txt 2>/dev/null
+assetfinder --subs-only TARGET | tee ./subs_assetfinder.txt
+cat ./subs_*.txt 2>/dev/null | sort -u > ./all_subdomains.txt
+wc -l ./all_subdomains.txt
 
 # Resolve and probe live hosts
-cat ~/xalgorix-data/all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ~/xalgorix-data/live_hosts.txt
-cat ~/xalgorix-data/all_subdomains.txt | dnsx -silent -a -resp -o ~/xalgorix-data/dns_resolved.txt
+cat ./all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ./live_hosts.txt
+cat ./all_subdomains.txt | dnsx -silent -a -resp -o ./dns_resolved.txt
 
 # Port scanning - comprehensive
-nmap -sV -sC -T4 -A -p- --open -oN ~/xalgorix-data/nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
-nmap -sU -T4 --top-ports 200 -oN ~/xalgorix-data/nmap_udp.txt TARGET
+nmap -sV -sC -T4 -A -p- --open -oN ./nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
+nmap -sU -T4 --top-ports 200 -oN ./nmap_udp.txt TARGET
 
 # Technology fingerprinting
 whatweb -v -a 3 https://TARGET 2>/dev/null
 wappalyzer https://TARGET 2>/dev/null || true
-curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ~/xalgorix-data/headers.txt
+curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ./headers.txt
 
 # WAF detection
 wafw00f https://TARGET -a
 
 # Crawling & URL discovery (use ALL tools, merge results)
-gospider -s https://TARGET --depth 3 -o ~/xalgorix-data/gospider/ 2>/dev/null
-katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ~/xalgorix-data/katana_urls.txt 2>/dev/null
-hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ~/xalgorix-data/hakrawler.txt
+gospider -s https://TARGET --depth 3 -o ./gospider/ 2>/dev/null
+katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ./katana_urls.txt 2>/dev/null
+hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ./hakrawler.txt
 
 # URL & archive mining (use ALL tools, merge results)
-gau TARGET --threads 5 --o ~/xalgorix-data/gau_urls.txt
-waymore -i TARGET -mode U -oU ~/xalgorix-data/waymore_urls.txt 2>/dev/null
-waybackurls TARGET | sort -u | tee ~/xalgorix-data/wayback_urls.txt
-cat ~/xalgorix-data/wayback_urls.txt ~/xalgorix-data/gau_urls.txt ~/xalgorix-data/waymore_urls.txt ~/xalgorix-data/katana_urls.txt ~/xalgorix-data/hakrawler.txt ~/xalgorix-data/gospider/*.txt 2>/dev/null | sort -u > ~/xalgorix-data/all_urls.txt
+gau TARGET --threads 5 --o ./gau_urls.txt
+waymore -i TARGET -mode U -oU ./waymore_urls.txt 2>/dev/null
+waybackurls TARGET | sort -u | tee ./wayback_urls.txt
+cat ./wayback_urls.txt ./gau_urls.txt ./waymore_urls.txt ./katana_urls.txt ./hakrawler.txt ./gospider/*.txt 2>/dev/null | sort -u > ./all_urls.txt
 
 # Parameter discovery
-paramspider -d TARGET -o ~/xalgorix-data/paramspider_urls.txt 2>/dev/null
-cat ~/xalgorix-data/all_urls.txt ~/xalgorix-data/paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ~/xalgorix-data/urls_with_params.txt
-cat ~/xalgorix-data/all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ~/xalgorix-data/all_params.txt
+paramspider -d TARGET -o ./paramspider_urls.txt 2>/dev/null
+cat ./all_urls.txt ./paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ./urls_with_params.txt
+cat ./all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ./all_params.txt
 
 # Hidden parameter discovery (CRITICAL — find params the app doesn't advertise)
 # Run arjun on top endpoints to brute-force hidden parameters
-cat ~/xalgorix-data/live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
-  arjun -u "$url" --stable -o ~/xalgorix-data/arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
+cat ./live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
+  arjun -u "$url" --stable -o ./arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
 done
 # Alternative: x8 for hidden param discovery
-cat ~/xalgorix-data/live_hosts.txt | head -10 | awk '{print $1}' | while read url; do
+cat ./live_hosts.txt | head -10 | awk '{print $1}' | while read url; do
   x8 -u "$url" -w /usr/share/wordlists/params.txt 2>/dev/null
 done
 
 # Extract JS files and analyze
-cat ~/xalgorix-data/all_urls.txt | grep -E "\.js$" | sort -u > ~/xalgorix-data/js_files.txt
-cat ~/xalgorix-data/js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ~/xalgorix-data/js_secrets.txt
+cat ./all_urls.txt | grep -E "\.js$" | sort -u > ./js_files.txt
+cat ./js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ./js_secrets.txt
 
 # DNS records - comprehensive
 dig TARGET ANY +noall +answer
@@ -730,7 +730,7 @@ whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|creat
 ` + "`" + `
 
 **AFTER RECON**: Save key findings with add_note. Note all live subdomains, open ports, endpoints, and tech stack.
-**MANDATORY**: For EVERY URL with parameters in ~/xalgorix-data/urls_with_params.txt, you MUST test them individually for XSS, SQLi, SSRF, SSTI. Do NOT just collect URLs and move on — test each one.
+**MANDATORY**: For EVERY URL with parameters in ./urls_with_params.txt, you MUST test them individually for XSS, SQLi, SSRF, SSTI. Do NOT just collect URLs and move on — test each one.
 
 ---
 
@@ -739,16 +739,16 @@ whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|creat
 **MUST COMPLETE FULLY - Run nuclei on ALL discovered endpoints, not just the main domain!**
 ` + "`" + `bash` + "`" + `
 # Nuclei DAST — comprehensive web vulnerability scanning
-nuclei -u https://TARGET -dast -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_dast.txt -stats -rl 50
+nuclei -u https://TARGET -dast -severity critical,high,medium,low -o ./nuclei_dast.txt -stats -rl 50
 
 # Nuclei — run with ALL relevant templates (fallback if -dast not supported)
-nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -t default-logins/ -t technologies/ -severity critical,high,medium,low -o ~/xalgorix-data/nuclei_full.txt -stats -rl 50
+nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -t default-logins/ -t technologies/ -severity critical,high,medium,low -o ./nuclei_full.txt -stats -rl 50
 
 # If subdomains found:
-nuclei -l ~/xalgorix-data/live_hosts.txt -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -severity critical,high,medium -o ~/xalgorix-data/nuclei_subs.txt -stats -rl 30
+nuclei -l ./live_hosts.txt -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -severity critical,high,medium -o ./nuclei_subs.txt -stats -rl 30
 
 # Nmap vuln scripts
-nmap --script vuln -p 80,443,8080,8443 TARGET -oN ~/xalgorix-data/nmap_vuln.txt
+nmap --script vuln -p 80,443,8080,8443 TARGET -oN ./nmap_vuln.txt
 ` + "`" + `
 
 **AFTER SCANNING**: Review every nuclei/nmap finding. 
@@ -769,8 +769,8 @@ nmap --script vuln -p 80,443,8080,8443 TARGET -oN ~/xalgorix-data/nmap_vuln.txt
 **DO NOT SKIP - Run testssl and check headers on ALL discovered domains!**
 ` + "`" + `bash` + "`" + `
 # Directory brute-forcing with multiple wordlists
-gobuster dir -u https://TARGET -w /usr/share/wordlists/dirb/common.txt -t 50 -x php,html,js,txt,bak,old,zip,sql,xml,json,conf,env,log,yml,yaml,toml,ini,cfg,asp,aspx,jsp -o ~/xalgorix-data/dirs.txt --no-error -b 404
-ffuf -u https://TARGET/FUZZ -w /usr/share/wordlists/dirb/big.txt -mc 200,201,301,302,307,403 -t 50 -recursion -recursion-depth 2 -o ~/xalgorix-data/ffuf.json -of json
+gobuster dir -u https://TARGET -w /usr/share/wordlists/dirb/common.txt -t 50 -x php,html,js,txt,bak,old,zip,sql,xml,json,conf,env,log,yml,yaml,toml,ini,cfg,asp,aspx,jsp -o ./dirs.txt --no-error -b 404
+ffuf -u https://TARGET/FUZZ -w /usr/share/wordlists/dirb/big.txt -mc 200,201,301,302,307,403 -t 50 -recursion -recursion-depth 2 -o ./ffuf.json -of json
 
 # Sensitive file probing (CRITICAL — test ALL of these)
 ` + "`" + `
@@ -886,10 +886,10 @@ if header.get('alg') == 'none': print('[VULN] Algorithm none accepted!')
 
 ` + "`" + `bash` + "`" + `
 # SQLi — test all params from wayback/crawl
-sqlmap -m ~/xalgorix-data/urls_with_params.txt --batch --level=5 --risk=3 --threads=10 --random-agent --tamper=space2comment,between --dbs --output-dir=~/xalgorix-data/sqlmap/ 2>/dev/null
+sqlmap -m ./urls_with_params.txt --batch --level=5 --risk=3 --threads=10 --random-agent --tamper=space2comment,between --dbs --output-dir=./sqlmap/ 2>/dev/null
 
 # XSS — test all params
-cat ~/xalgorix-data/urls_with_params.txt | dalfox pipe --silence -o ~/xalgorix-data/dalfox_xss.txt 2>/dev/null
+cat ./urls_with_params.txt | dalfox pipe --silence -o ./dalfox_xss.txt 2>/dev/null
 
 # Or manual XSS testing per endpoint:
 ` + "`" + `
@@ -1032,7 +1032,7 @@ for ep in ['graphql', 'graphiql', 'api/graphql', 'gql', 'query']:
 ### PHASE 13: Subdomain Takeover
 ` + "`" + `bash` + "`" + `
 # Check for dangling CNAME records
-cat ~/xalgorix-data/all_subdomains.txt | while read sub; do
+cat ./all_subdomains.txt | while read sub; do
   cname=$(dig CNAME "$sub" +short)
   if [ -n "$cname" ]; then
     host "$cname" >/dev/null 2>&1 || echo "[POTENTIAL TAKEOVER] $sub -> $cname (NXDOMAIN)"
@@ -1040,7 +1040,7 @@ cat ~/xalgorix-data/all_subdomains.txt | while read sub; do
 done
 
 # Or use subjack/subzy
-subjack -w ~/xalgorix-data/all_subdomains.txt -t 100 -timeout 30 -ssl -o ~/xalgorix-data/takeovers.txt 2>/dev/null
+subjack -w ./all_subdomains.txt -t 100 -timeout 30 -ssl -o ./takeovers.txt 2>/dev/null
 ` + "`" + `
 
 ### PHASE 14: Open Redirect Testing
@@ -1099,7 +1099,7 @@ except Exception as e: print(f'DNS check: {e}')
 ### PHASE 18: CMS-Specific Testing
 ` + "`" + `bash` + "`" + `
 # WordPress
-wpscan --url https://TARGET --enumerate vp,vt,u,dbe,cb,m --random-user-agent -o ~/xalgorix-data/wpscan.txt 2>/dev/null
+wpscan --url https://TARGET --enumerate vp,vt,u,dbe,cb,m --random-user-agent -o ./wpscan.txt 2>/dev/null
 # Joomla
 joomscan -u https://TARGET -ec 2>/dev/null
 # Drupal
