@@ -47,6 +47,19 @@ func KillAllProcesses() {
 	processGroup = make(map[*exec.Cmd]context.CancelFunc)
 }
 
+// Global working directory override for terminal commands
+var workDirOverride string
+
+// SetWorkDir sets the working directory for terminal commands
+func SetWorkDir(dir string) {
+	workDirOverride = dir
+}
+
+// GetWorkDir returns the current working directory override
+func GetWorkDir() string {
+	return workDirOverride
+}
+
 // Common command → package mappings for auto-install.
 var packageMap = map[string]string{
 	// DNS & networking
@@ -256,7 +269,12 @@ func runShell(command string, timeoutSec int) (string, int) {
 	)
 	
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
-	cmd.Dir = cfg.Workspace
+	// Use workDirOverride if set, otherwise default to config workspace
+	if workDirOverride != "" {
+		cmd.Dir = workDirOverride
+	} else {
+		cmd.Dir = cfg.Workspace
+	}
 	cmd.Env = cmdEnv
 	
 	// Create new process group for this command

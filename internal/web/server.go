@@ -27,9 +27,10 @@ import (
 	"github.com/xalgord/xalgorix/internal/config"
 	"github.com/xalgord/xalgorix/internal/tools/notes"
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
+	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "1.5.2-beta"
+const version = "1.5.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -934,6 +935,9 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 	}
 
 	events := make(chan agent.Event, 512)
+	// Set working directory for terminal commands
+	terminal.SetWorkDir(s.currentScanDir)
+
 	s.agent = agent.NewAgent(s.cfg, "XalgorixAgent", events)
 
 	// Initialize scan record for persistence
