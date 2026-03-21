@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.5.0"
+const version = "1.5.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -836,92 +836,12 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 
 			continue // Skip the regular scan below since we did wildcard handling above
 		} else if req.ScanMode == "dast" {
-			// DAST mode - scan specific URLs (not subdomains)
-			// Build comprehensive DAST instruction for URL scanning
-			dastInstruction := fmt.Sprintf(`DAST (Dynamic Application Security Testing) ON: %s
-
-This is a URL-LEVEL vulnerability assessment. You are testing a specific URL, not a domain or subdomain.
-
-TARGET URL: %s
-
-## CRITICAL: DAST MODE RULES
-- Do NOT scan for subdomains - only test THIS exact URL
-- Do NOT run nmap/subfinder/amass - they are for recon, not DAST
-- Focus on the URL provided, its parameters, and endpoints it reveals
-
-## PHASE 1: URL ANALYSIS
-- Send a request and analyze the response
-- Identify: parameters, forms, headers, cookies, HTTP methods supported
-- Check for interesting headers: Server, X-Powered-By, X-Framework
-- Note all input fields, even hidden ones
-
-## PHASE 2: CRAWL THE APPLICATION (from this URL)
-- Use tools to discover more endpoints FROM this URL:
-  - gospider -s %s --depth 2
-  - katana -u %s -d 3 -jc
-  - hakrawler -url %s -depth 2
-  - source ~/xalgorix-venv/bin/activate && scrapling --url %s --depth 2 --output ./scrapling.json 2>/dev/null || true
-- Collect ALL URLs discovered
-
-## PHASE 3: PARAMETER DISCOVERY
-- Find ALL parameters in all discovered URLs
-- Use: paramspider -u %s
-- Use: arjun -u %s -m GET
-
-## PHASE 4: VULNERABILITY TESTING (TEST EVERY PARAMETER)
-For EACH parameter found, test:
-
-### SQL Injection
-- ' OR '1'='1, admin'--, ' UNION SELECT--
-- Test with time delays: '; WAITFOR DELAY
-- Test in GET, POST, headers, cookies
-
-### XSS
-- <script>alert(1)</script>, <img src=x onerror=alert(1)>
-- Test in URL params, form fields, headers
-
-### SSRF
-- http://localhost, http://127.0.0.1
-- http://169.254.169.254 (cloud metadata)
-- Test in every URL parameter
-
-### Command Injection
-- ;whoami, |whoami, $(whoami)
-- Test in filename params, search params
-
-### LFI/Path Traversal
-- ../../../../etc/passwd, ..\\..\\..\\windows\\system32
-
-### IDOR
-- Change IDs, UUIDs, usernames in URLs
-- Test horizontal and vertical privilege
-
-## PHASE 5: NUCLEI DAST (Run on URLs ONLY!)
-**IMPORTANT: Run nuclei on discovered URLs, NOT on the main domain!**
-
-After crawling, you have a list of URLs in ./*.txt
-- Run nuclei on each URL file:
-  - nuclei -l ./gospider/*.txt -dast -severity critical,high,medium -o ./nuclei_dast.txt
-  - nuclei -l ./katana.txt -dast -severity critical,high -o ./nuclei_katana.txt
-  - nuclei -l ./gau.txt -dast -severity critical,high,medium -o ./nuclei_gau.txt
-  - nuclei -l ./wayback.txt -dast -severity critical,high -o ./nuclei_wayback.txt
-
-DO NOT run: nuclei -u TARGET (that scans the main domain only!)
-
-## PHASE 6: MANUAL EXPLOITATION
-For each finding, manually exploit to prove impact:
-- Extract data with SQLi
-- Steal cookies with XSS
-- Access internal services with SSRF
-
-THINK OUT OF THE BOX - tools miss 80%% of bugs!
-
+			// DAST mode - autonomous URL vulnerability testing
+			dastInstruction := buildDASTInstruction(target)
 			// Append user's custom instructions if provided
 			if req.Instruction != "" {
 				dastInstruction += "\n\n" + req.Instruction
 			}
-Document everything in add_note.`, target, target, target, target, target)
-
 			s.broadcast(WSEvent{
 				Type:         "target_started",
 				Content:      fmt.Sprintf("[DAST] Scanning URL: %s", target),

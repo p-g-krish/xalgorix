@@ -1,15 +1,13 @@
 // Package web provides the HTTP server and API handlers.
 package web
 
-import "fmt"
-
 // Build autonomous instruction that gives AI freedom to decide approach
 func buildAutonomousInstruction(target string, customInstruction string) string {
-	return fmt.Sprintf(`## AUTONOMOUS PENTESTING MODE
+	baseInstruction := `## AUTONOMOUS PENTESTING MODE
 
 You are an expert penetration tester. YOUR GOAL: Find REAL vulnerabilities that can be exploited - not just tool output.
 
-## YOUR TARGET: %s
+## YOUR TARGET: ` + target + `
 
 ## CRITICAL MINDSET
 - You are NOT a tool runner - you are a THINKING attacker
@@ -40,10 +38,10 @@ After EVERY tool:
 
 Run tools to understand the target, but DON'T rely on them alone:
 
-1. nmap -sV -sC -p- --open TARGET
-2. httpx -title -tech-detect -status-code
-3. gospider --depth 3
-4. waybackurls TARGET
+1. nmap -sV -sC -p- --open ` + target + `
+2. httpx -title -tech-detect -status-code ` + target + `
+3. gospider --depth 3 -s ` + target + `
+4. waybackurls ` + target + `
 
 THEN: Research the tech stack. What CVEs exist? What are known weaknesses?
 
@@ -93,7 +91,7 @@ For each feature/endpoint you find:
   * Username enumeration: Does the error say "user not found" vs "wrong password"?
   * Password reset token prediction
   * Session fixation
-  * JWT algorithm confusion (none, RS256→HS256)
+  * JWT algorithm confusion (none, RS256->HS256)
   * OAuth misconfigurations
   * Bypass 2FA with session reuse
 
@@ -140,6 +138,102 @@ You decide:
 - When to dig deeper vs move on
 
 The methodology is a GUIDE, not a checklist. Use your intelligence.
+`
 
-`, target, target)
+	if customInstruction != "" {
+		return baseInstruction + "\n\n" + customInstruction
+	}
+	return baseInstruction
+}
+
+// Build autonomous DAST instruction for URL scanning
+func buildDASTInstruction(target string) string {
+	return `## AUTONOMOUS DAST MODE
+
+You are testing a specific URL for vulnerabilities. This is URL-LEVEL testing, not domain reconnaissance.
+
+YOUR TARGET: ` + target + `
+
+## CRITICAL: DAST RULES
+- Do NOT scan subdomains - only test THIS exact URL
+- Do NOT run nmap/subfinder/amass - they are for recon
+- Focus on THIS URL, its parameters, and what it reveals
+
+## YOUR APPROACH
+
+### 1. ANALYZE THE URL
+- Send a request and study the response
+- What parameters does it accept?
+- What does the app DO with this URL?
+- What would an attacker want from it?
+
+### 2. DISCOVER MORE (optional - YOU decide)
+If you need more endpoints:
+- gospider -s ` + target + ` --depth 2
+- katana -u ` + target + ` -d 3 -jc
+- hakrawler -url ` + target + ` -depth 2
+- waybackurls ` + target + `
+- scrapling --url ` + target + ` --depth 2
+
+THEN: Research what you found. What vulnerabilities exist in this tech stack?
+
+### 3. TEST EVERY PARAMETER
+
+For EACH parameter you find:
+
+**SQL Injection:**
+- Tools miss: time-based, stacked, second-order, header injection
+- Test: admin' AND SLEEP(5)--, ';DROP TABLE--
+- Headers: X-Forwarded-For, User-Agent, Cookie
+
+**XSS:**
+- Tools miss: DOM-based, stored with filters, context-specific
+- Test: <script>alert(1)</script>, event handlers, SVG
+- Bypass: encoding, mixed case, null bytes
+
+**SSRF:**
+- Test: http://169.254.169.254, http://localhost:22, http://10.0.0.1
+- Headers: Referer can sometimes trigger SSRF
+
+**IDOR:**
+- Not just ID=1 vs ID=2
+- Test: UUIDs, tokens, changing OTHER parameters
+- Horizontal vs vertical privilege escalation
+
+**Command Injection:**
+- Test: ;whoami, |whoami, $(whoami)
+- Headers, cookies, filenames as injection points
+
+**LFI/Path Traversal:**
+- ../../../../etc/passwd
+- Windows: ..\\..\\..\\windows\\system32
+
+### 4. EXPLOIT - PROVE IT
+
+For EVERY finding:
+1. EXPLOIT IT - not just confirm, demonstrate impact
+2. Get REAL data - users, config, anything valuable
+3. SCREENSHOT the proof
+4. Calculate CVSS score
+
+### 5. THINK BEYOND TOOLS
+
+After each tool:
+- What did this MISS?
+- What edge cases exist?
+- Can I chain findings?
+- Is there business logic abuse?
+
+## YOUR FREEDOM
+
+You decide:
+- Which tools to run (or none!)
+- Which parameters to test deeply
+- When to stop and focus on a finding
+- When to dig deeper vs move on
+
+The tools are a START. Your brain is the DIFFERENCE.
+
+Report all findings in add_note with: URL, parameter, payload, impact, CVSS.
+`
 }
