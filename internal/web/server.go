@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "1.5.5"
+const version = "1.5.6"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -644,11 +644,8 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			// PHASE 1: First do comprehensive subdomain enumeration
-			discoveryInstruction := `PHASE 1: COMPREHENSIVE SUBDOMAIN ENUMERATION
-
-Your ONLY task in this phase is to discover ALL subdomains. Do NOT run any vulnerability scans yet.
-
-Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.):
+			discoveryInstruction := `# IMPORTANT: You are in the correct scan directory. Create it if needed and start:
+mkdir -p ./ && echo "Starting subdomain enumeration in $(pwd)"
 
 # Passive subdomain enumeration (subfinder is passive by default)
 1. subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
