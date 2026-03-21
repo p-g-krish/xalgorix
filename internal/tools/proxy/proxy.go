@@ -135,7 +135,7 @@ func sendRequest(args map[string]string) (tools.Result, error) {
 	}
 
 	caidoPort := detectCaidoPort()
-	
+
 	// Check if Caido is accessible
 	checkResp, checkErr := http.Get(fmt.Sprintf("http://127.0.0.1:%d", caidoPort))
 	if checkErr != nil || (checkResp != nil && checkResp.StatusCode >= 500) {
@@ -148,7 +148,7 @@ func sendRequest(args map[string]string) (tools.Result, error) {
 	if checkResp != nil {
 		checkResp.Body.Close()
 	}
-	
+
 	proxyURLStr := fmt.Sprintf("http://127.0.0.1:%d", caidoPort)
 	proxyURL, _ := url.Parse(proxyURLStr)
 

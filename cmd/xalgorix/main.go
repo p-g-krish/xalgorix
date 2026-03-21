@@ -53,7 +53,7 @@ func main() {
 
 	if args.update {
 		fmt.Println("Updating xalgorix to latest version...")
-		
+
 		// Get the latest release version from GitHub
 		resp, err := http.Get("https://api.github.com/repos/xalgord/xalgorix/releases/latest")
 		if err != nil {
@@ -61,7 +61,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
-		
+
 		var release struct {
 			TagName string `json:"tag_name"`
 			Assets  []struct {
@@ -69,12 +69,12 @@ func main() {
 				URL  string `json:"browser_download_url"`
 			} `json:"assets"`
 		}
-		
+
 		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to parse release info: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		// Find the linux amd64 binary
 		var downloadURL string
 		for _, asset := range release.Assets {
@@ -83,15 +83,15 @@ func main() {
 				break
 			}
 		}
-		
+
 		if downloadURL == "" {
 			fmt.Fprintln(os.Stderr, "No suitable binary found for this platform")
 			os.Exit(1)
 		}
-		
+
 		// Download the binary
 		fmt.Printf("Downloading %s...\n", release.TagName)
-		
+
 		req, _ := http.NewRequest("GET", downloadURL, nil)
 		req.Header.Set("Accept", "application/octet-stream")
 		client := &http.Client{}
@@ -101,7 +101,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
-		
+
 		// Write to temp file
 		tmpFile, err := os.CreateTemp("", "xalgorix-*")
 		if err != nil {
@@ -109,30 +109,30 @@ func main() {
 			os.Exit(1)
 		}
 		defer os.Remove(tmpFile.Name())
-		
+
 		_, err = io.Copy(tmpFile, resp.Body)
 		tmpFile.Close()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to save download: %v\n", err)
 			os.Exit(1)
 		}
-		
-		// Make executable 
+
+		// Make executable
 		os.Chmod(tmpFile.Name(), 0755)
-		
+
 		// Determine install path - use GOPATH if available
 		goPath := os.Getenv("GOPATH")
 		if goPath == "" {
 			goPath = filepath.Join(os.Getenv("HOME"), "go")
 		}
 		installPath := filepath.Join(goPath, "bin", "xalgorix")
-		
+
 		// Create bin directory if needed
 		os.MkdirAll(filepath.Join(goPath, "bin"), 0755)
-		
+
 		// First try to remove existing binary (might fail if running)
 		os.Remove(installPath + ".new")
-		
+
 		// Copy to .new extension first
 		cmd := exec.Command("cp", tmpFile.Name(), installPath+".new")
 		cmd.Stdout = os.Stdout
@@ -147,12 +147,12 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		
+
 		// Rename to actual path (atomic on same filesystem)
 		os.Rename(installPath+".new", installPath)
-		
+
 		fmt.Println("✅ Updated successfully!")
-		
+
 		// Show the new version
 		verCmd := exec.Command(installPath, "--version")
 		verCmd.Stdout = os.Stdout
@@ -349,7 +349,7 @@ func handleStart() {
 		goPath = filepath.Join(os.Getenv("HOME"), "go")
 	}
 	installPath := filepath.Join(goPath, "bin", "xalgorix")
-	
+
 	// Check if binary exists
 	if _, err := os.Stat(installPath); os.IsNotExist(err) {
 		fmt.Printf("❌ Xalgorix not found at %s\n", installPath)
@@ -360,7 +360,7 @@ func handleStart() {
 	// Kill any existing xalgorix processes first
 	exec.Command("pkill", "-f", "xalgorix.*--web").Run()
 	time.Sleep(1 * time.Second)
-	
+
 	// Also kill anything using port 1337
 	exec.Command("fuser", "-k", "1337/tcp").Run()
 	time.Sleep(1 * time.Second)
@@ -388,7 +388,7 @@ WantedBy=multi-user.target
 	// Try to write service file (requires sudo)
 	servicePath := "/etc/systemd/system/xalgorix.service"
 	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)
-	
+
 	if err != nil {
 		// Try with sudo
 		cmd := exec.Command("sudo", "tee", servicePath)
@@ -439,7 +439,7 @@ func startBackground() {
 		goPath = filepath.Join(os.Getenv("HOME"), "go")
 	}
 	installPath := filepath.Join(goPath, "bin", "xalgorix")
-	
+
 	// Start via bash to source env file
 	startCmd := exec.Command("/bin/bash", "-c", "source /root/.xalgorix.env && "+installPath+" --web")
 	startCmd.Stdout = logFile
@@ -466,20 +466,20 @@ func handleStop() {
 			resp.Body.Close()
 		}
 	}()
-	
+
 	// Small delay to let notification send
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Try systemctl first (with sudo)
 	cmd := exec.Command("sudo", "systemctl", "stop", "xalgorix")
 	err := cmd.Run()
-	
+
 	if err != nil {
 		// Fallback: pkill
 		cmd = exec.Command("pkill", "-f", "xalgorix")
 		cmd.Run()
 	}
-	
+
 	fmt.Println("✅ Xalgorix stopped!")
 }
 
@@ -488,14 +488,14 @@ func handleRestart() {
 	// Try systemctl first (with sudo)
 	cmd := exec.Command("sudo", "systemctl", "restart", "xalgorix")
 	err := cmd.Run()
-	
+
 	if err != nil {
 		// Fallback: stop then start
 		handleStop()
 		startBackground()
 		return
 	}
-	
+
 	fmt.Println("✅ Xalgorix restarted!")
 	fmt.Println("   Web UI: http://localhost:1337")
 }
@@ -503,18 +503,18 @@ func handleRestart() {
 // handleUninstall removes xalgorix from the system
 func handleUninstall() {
 	fmt.Println("🗑️  Uninstalling Xalgorix...")
-	
+
 	// Stop the service first
 	cmd := exec.Command("pkill", "-f", "xalgorix")
 	cmd.Run()
-	
+
 	// Determine install path
 	goPath := os.Getenv("GOPATH")
 	if goPath == "" {
 		goPath = filepath.Join(os.Getenv("HOME"), "go")
 	}
 	installPath := filepath.Join(goPath, "bin", "xalgorix")
-	
+
 	// Remove binary
 	if _, err := os.Stat(installPath); err == nil {
 		rmCmd := exec.Command("rm", installPath)
@@ -526,7 +526,7 @@ func handleUninstall() {
 			fmt.Printf("✅ Removed %s\n", installPath)
 		}
 	}
-	
+
 	// Ask about data removal
 	fmt.Println()
 	fmt.Println("📁 Data directories (not removed automatically):")
@@ -535,7 +535,7 @@ func handleUninstall() {
 	fmt.Println()
 	fmt.Println("To remove data manually:")
 	fmt.Println("   rm -rf ~/.xalgorix ~/xalgorix-data")
-	
+
 	fmt.Println()
 	fmt.Println("✅ Uninstall complete!")
 }

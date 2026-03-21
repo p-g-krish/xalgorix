@@ -45,7 +45,7 @@ type Config struct {
 
 	// AgentMail - temp email for sign-up verification
 	AgentMailAPIKey string // AGENTMAIL_API_KEY - AgentMail API key
-	AgentMailPod     string // AGENTMAIL_POD - AgentMail pod (e.g., "am_us_pod_47")
+	AgentMailPod    string // AGENTMAIL_POD - AgentMail pod (e.g., "am_us_pod_47")
 
 	// Paths
 	HomeDir   string // ~/.xalgorix
@@ -110,9 +110,9 @@ func load() *Config {
 		OTelEndpoint: envOr("XALGORIX_OTEL_ENDPOINT", ""),
 
 		// Web Search API
-		GeminiAPIKey: envOr("GEMINI_API_KEY", ""),
+		GeminiAPIKey:    envOr("GEMINI_API_KEY", ""),
 		AgentMailAPIKey: envOr("AGENTMAIL_API_KEY", ""),
-		AgentMailPod: envOr("AGENTMAIL_POD", ""),
+		AgentMailPod:    envOr("AGENTMAIL_POD", ""),
 
 		// Paths
 		HomeDir:   xalgorixHome,
@@ -155,7 +155,7 @@ func CheckEnvFile() error {
 	}
 
 	envPath := filepath.Join(home, ".xalgorix.env")
-	
+
 	// Check if file exists
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		return fmt.Errorf("configuration file not found: %s\n\nPlease create it with:\n  XALGORIX_LLM=minimax/MiniMax-M2.5\n  XALGORIX_API_KEY=your_api_key\n\nOr run: xalgorix --setup", envPath)
@@ -164,7 +164,7 @@ func CheckEnvFile() error {
 	// Read file directly to check for required variables (not system env vars)
 	llm := ""
 	apiKey := ""
-	
+
 	f, err := os.Open(envPath)
 	if err != nil {
 		return fmt.Errorf("cannot read config file: %w", err)
@@ -184,7 +184,7 @@ func CheckEnvFile() error {
 		}
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		
+
 		if key == "XALGORIX_LLM" {
 			llm = value
 		} else if key == "XALGORIX_API_KEY" {

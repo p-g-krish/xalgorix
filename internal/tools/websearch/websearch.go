@@ -117,12 +117,12 @@ func formatResults(query string, results []searchResult) tools.Result {
 func searchBrave(query string, max int) ([]searchResult, error) {
 	// Try Brave's JSON API (more reliable)
 	url := fmt.Sprintf("https://search.brave.com/api/search?q=%s&count=%d", netURL.QueryEscape(query), max)
-	
+
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Accept", "application/json")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func searchBrave(query string, max int) ([]searchResult, error) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	var brave struct {
 		WebResults []struct {
 			Title string `json:"title"`
@@ -142,7 +142,7 @@ func searchBrave(query string, max int) ([]searchResult, error) {
 			Desc  string `json:"description"`
 		} `json:"web"`
 	}
-	
+
 	if err := json.Unmarshal(body, &brave); err != nil {
 		return nil, err
 	}
@@ -165,13 +165,13 @@ func searchBrave(query string, max int) ([]searchResult, error) {
 // searchGoogle scrapes Google search results
 func searchGoogle(query string, max int) ([]searchResult, error) {
 	url := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d", netURL.QueryEscape(query), max)
-	
+
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -182,7 +182,7 @@ func searchGoogle(query string, max int) ([]searchResult, error) {
 	html := string(body)
 
 	var results []searchResult
-	
+
 	// Parse Google results
 	parts := strings.Split(html, `<div class="BNeawe`)
 	for _, part := range parts {
@@ -195,7 +195,7 @@ func searchGoogle(query string, max int) ([]searchResult, error) {
 				}
 				if urlEnd > 0 {
 					results = append(results, searchResult{
-						URL: part[urlStart:urlStart+urlEnd],
+						URL: part[urlStart : urlStart+urlEnd],
 					})
 				}
 			}
@@ -211,11 +211,11 @@ func searchGoogle(query string, max int) ([]searchResult, error) {
 // searchBing scrapes Bing search results
 func searchBing(query string, max int) ([]searchResult, error) {
 	url := fmt.Sprintf("https://www.bing.com/search?q=%s&count=%d", netURL.QueryEscape(query), max)
-	
+
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func searchBing(query string, max int) ([]searchResult, error) {
 	html := string(body)
 
 	var results []searchResult
-	
+
 	// Parse Bing results
 	parts := strings.Split(html, `class="b_attrib"`)
 	for _, part := range parts {
@@ -251,13 +251,13 @@ func searchBing(query string, max int) ([]searchResult, error) {
 func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 	// Try JSON API first (more reliable)
 	url := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", netURL.QueryEscape(query))
-	
+
 	resp, err := http.Get(url)
 	if err == nil {
 		defer resp.Body.Close()
 		if resp.StatusCode == 200 {
 			body, _ := io.ReadAll(resp.Body)
-			
+
 			var ddg struct {
 				AbstractText string `json:"AbstractText"`
 				AbstractURL  string `json:"AbstractURL"`
@@ -266,9 +266,9 @@ func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 					URL  string `json:"URL"`
 				} `json:"RelatedTopics"`
 			}
-			
+
 			json.Unmarshal(body, &ddg)
-			
+
 			var results []searchResult
 			if ddg.AbstractText != "" {
 				results = append(results, searchResult{
@@ -277,26 +277,26 @@ func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 					Snippet: ddg.AbstractText,
 				})
 			}
-			
+
 			for _, r := range ddg.Results {
 				if len(results) >= max {
 					break
 				}
 				results = append(results, searchResult{
-					Title:   r.Text,
-					URL:     r.URL,
+					Title: r.Text,
+					URL:   r.URL,
 				})
 			}
-			
+
 			if len(results) > 0 {
 				return results, nil
 			}
 		}
 	}
-	
+
 	// Fallback to HTML scraping
 	url = fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", netURL.QueryEscape(query))
-	
+
 	resp, err = http.Get(url)
 	if err != nil {
 		return nil, err
@@ -307,7 +307,7 @@ func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 	html := string(body)
 
 	var results []searchResult
-	
+
 	// Parse DuckDuckGo HTML results
 	parts := strings.Split(html, `class="result__a"`)
 	for _, part := range parts {
@@ -340,7 +340,7 @@ func searchDuckDuckGo(query string, max int) ([]searchResult, error) {
 func searchGemini(query string, max int) ([]searchResult, error) {
 	cfg := config.Get()
 	apiKey := cfg.GeminiAPIKey
-	
+
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY not configured")
 	}
@@ -410,7 +410,7 @@ func searchGemini(query string, max int) ([]searchResult, error) {
 						if urlEnd < 0 {
 							urlEnd = len(line[urlStart:])
 						}
-						url := line[urlStart:urlStart+urlEnd]
+						url := line[urlStart : urlStart+urlEnd]
 						// Clean up URL
 						url = strings.TrimSuffix(url, ".")
 						if len(results) < max {
@@ -457,13 +457,13 @@ func cveSearch(args map[string]string) (tools.Result, error) {
 	body, _ := io.ReadAll(resp.Body)
 
 	var nvd struct {
-		ResultsPerPage int `json:"resultsPerPage"`
+		ResultsPerPage  int `json:"resultsPerPage"`
 		Vulnerabilities []struct {
 			CVE struct {
 				ID           string `json:"id"`
-				Published   string `json:"published"`
+				Published    string `json:"published"`
 				LastModified string `json:"lastModified"`
-				Description struct {
+				Description  struct {
 					Lang  string `json:"language"`
 					Value string `json:"value"`
 				} `json:"description"`
@@ -481,7 +481,7 @@ func cveSearch(args map[string]string) (tools.Result, error) {
 					} `json:"CVSSMetric_V31"`
 				} `json:"metrics"`
 				References []struct {
-					URL   string `json:"url"`
+					URL    string `json:"url"`
 					Source string `json:"source"`
 				} `json:"references"`
 			} `json:"cve"`

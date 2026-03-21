@@ -14,6 +14,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/config"
 	"github.com/xalgord/xalgorix/internal/llm"
 	"github.com/xalgord/xalgorix/internal/tools"
+	"github.com/xalgord/xalgorix/internal/tools/agentmail"
 	"github.com/xalgord/xalgorix/internal/tools/agentsgraph"
 	"github.com/xalgord/xalgorix/internal/tools/browser"
 	"github.com/xalgord/xalgorix/internal/tools/fileedit"
@@ -23,7 +24,6 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/proxy"
 	"github.com/xalgord/xalgorix/internal/tools/python"
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
-	"github.com/xalgord/xalgorix/internal/tools/agentmail"
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 	"github.com/xalgord/xalgorix/internal/tools/websearch"
 )
@@ -84,7 +84,7 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 		registry: reg,
 		events:   events,
 		maxIter:  cfg.MaxIterations,
-		ctx:     context.Background(),
+		ctx:      context.Background(),
 	}
 
 	// Create cancellable context
@@ -241,12 +241,12 @@ Call a tool NOW in your next response.`
 // Stop signals the agent to stop and kills all running processes.
 func (a *Agent) Stop() {
 	a.stopped = true
-	
+
 	// Cancel context to stop any blocking operations
 	if a.cancel != nil {
 		a.cancel()
 	}
-	
+
 	// Kill all running terminal processes
 	terminal.KillAllProcesses()
 }
@@ -256,19 +256,19 @@ func (a *Agent) SendMessage(message string) (string, error) {
 	if a.client == nil {
 		return "", fmt.Errorf("agent not initialized")
 	}
-	
+
 	// Add user message
 	a.messages = append(a.messages, llm.Message{Role: "user", Content: message})
-	
+
 	// Get response from LLM
 	response, err := a.client.Chat(a.messages)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Add assistant response to messages
 	a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
-	
+
 	return response, nil
 }
 
@@ -276,7 +276,7 @@ func (a *Agent) SendMessage(message string) (string, error) {
 func formatToolResult(toolName string, result tools.Result) string {
 	output := result.Output
 	errorMsg := result.Error
-	
+
 	// Build the message
 	var msg string
 	if errorMsg != "" {
@@ -288,14 +288,14 @@ func formatToolResult(toolName string, result tools.Result) string {
 	} else {
 		msg = fmt.Sprintf("Tool '%s' completed successfully (no output)", toolName)
 	}
-	
+
 	return msg
 }
 
 // getToolSuggestion provides helpful suggestions when a tool fails
 func getToolSuggestion(toolName, errorMsg string) string {
 	lower := strings.ToLower(errorMsg)
-	
+
 	switch {
 	case strings.Contains(toolName, "terminal") || strings.Contains(toolName, "browser"):
 		if strings.Contains(lower, "not found") || strings.Contains(lower, "no such file") {
@@ -310,7 +310,7 @@ func getToolSuggestion(toolName, errorMsg string) string {
 		if strings.Contains(lower, "connection") || strings.Contains(lower, "network") {
 			return "Suggestion: Network error. Check the target URL and try again.\n"
 		}
-		
+
 	case strings.Contains(toolName, "python"):
 		if strings.Contains(lower, "no module") || strings.Contains(lower, "import error") {
 			return "Suggestion: Missing Python module. Try installing the required package or use an alternative approach.\n"
@@ -318,18 +318,18 @@ func getToolSuggestion(toolName, errorMsg string) string {
 		if strings.Contains(lower, "syntax") {
 			return "Suggestion: Python syntax error. Check the script for errors.\n"
 		}
-		
+
 	case strings.Contains(toolName, "browser"):
 		if strings.Contains(lower, "chrome") || strings.Contains(lower, "chromium") {
 			return "Suggestion: Browser automation issue. Try using send_request instead for HTTP interactions.\n"
 		}
-		
+
 	case strings.Contains(toolName, "proxy"):
 		if strings.Contains(lower, "connection refused") {
 			return "Suggestion: Proxy connection failed. Make sure Caido is running or use direct HTTP requests.\n"
 		}
 	}
-	
+
 	return ""
 }
 

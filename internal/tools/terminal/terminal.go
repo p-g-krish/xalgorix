@@ -24,7 +24,7 @@ const maxOutputLen = 20000
 
 // Global process tracker for stop functionality
 var (
-	processGroup  = make(map[*exec.Cmd]context.CancelFunc)
+	processGroup = make(map[*exec.Cmd]context.CancelFunc)
 	processMutex sync.Mutex
 )
 
@@ -87,16 +87,16 @@ var packageMap = map[string]string{
 	// SSL/TLS
 	"openssl": "openssl",
 	// Recon / enumeration
-	"nikto":      "nikto",
-	"dirb":       "dirb",
-	"gobuster":   "gobuster",
-	"ffuf":       "ffuf",
-	"subfinder":  "subfinder",
-	"findomain":  "findomain",
+	"nikto":       "nikto",
+	"dirb":        "dirb",
+	"gobuster":    "gobuster",
+	"ffuf":        "ffuf",
+	"subfinder":   "subfinder",
+	"findomain":   "findomain",
 	"assetfinder": "assetfinder",
-	"masscan":    "masscan",
-	"wfuzz":      "wfuzz",
-	"httpx":      "httpx",
+	"masscan":     "masscan",
+	"wfuzz":       "wfuzz",
+	"httpx":       "httpx",
 	"dnsx":        "dnsx",
 	"nuclei":      "nuclei",
 	// Text processing
@@ -106,11 +106,11 @@ var packageMap = map[string]string{
 	// Git
 	"git": "git",
 	// Python
-	"python3": "python3",
-	"pip3":    "python3-pip",
-	"pip":     "python3-pip",
-	"scrapling": "pipx install scrapling",  // Web scraping with anti-bot bypass
-	"python-venv": "python3-venv",  // For venv-based Python tools
+	"python3":     "python3",
+	"pip3":        "python3-pip",
+	"pip":         "python3-pip",
+	"scrapling":   "pipx install scrapling", // Web scraping with anti-bot bypass
+	"python-venv": "python3-venv",           // For venv-based Python tools
 	// General
 	"tree":    "tree",
 	"unzip":   "unzip",
@@ -221,7 +221,7 @@ func ensureVenv() {
 		homeDir = "/root"
 	}
 	venvPath := filepath.Join(homeDir, "venv")
-	
+
 	// Check if venv exists
 	if _, err := os.Stat(venvPath); os.IsNotExist(err) {
 		// Create venv
@@ -234,40 +234,40 @@ func ensureVenv() {
 func runShell(command string, timeoutSec int) (string, int) {
 	// Ensure venv exists
 	ensureVenv()
-	
+
 	homeDir := os.Getenv("HOME")
 	if homeDir == "" {
 		homeDir = "/root"
 	}
 	venvActivate := "source " + filepath.Join(homeDir, "venv", "bin", "activate") + " && "
-	
+
 	// Wrap command with venv activation
 	command = venvActivate + command
-	
+
 	cfg := config.Get()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
 	// Set PATH to include common tool locations (dynamic - works for any user)
 	// homeDir already set above
-	
+
 	// Also check GOPATH
 	goPath := os.Getenv("GOPATH")
 	if goPath == "" {
 		goPath = homeDir + "/go"
 	}
-	
+
 	// Build dynamic PATH including all possible tool locations
 	dynamicPath := goPath + "/bin:" + homeDir + "/go/bin:" + homeDir + "/.local/bin"
-	
+
 	// Also add paths from other common locations
 	dynamicPath += ":/home/*/go/bin:/home/*/.local/bin"
-	
-	cmdEnv := append(os.Environ(), 
+
+	cmdEnv := append(os.Environ(),
 		"PATH="+dynamicPath+":"+os.Getenv("PATH"),
 		"GOPATH="+goPath,
 	)
-	
+
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	// Use workDirOverride if set, otherwise default to config workspace
 	if workDirOverride != "" {
@@ -276,16 +276,16 @@ func runShell(command string, timeoutSec int) (string, int) {
 		cmd.Dir = cfg.Workspace
 	}
 	cmd.Env = cmdEnv
-	
+
 	// Create new process group for this command
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
-	
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	// Register process for tracking
 	processMutex.Lock()
 	processGroup[cmd] = cancel
@@ -372,18 +372,18 @@ func installPackage(pkg string) string {
 		"findomain":   "github.com/findomain/findomain@latest",
 		"assetfinder": "github.com/tomnomnom/assetfinder@latest",
 	}
-	
+
 	homeDir := os.Getenv("HOME")
 	if homeDir == "" {
 		homeDir = "/root"
 	}
-	
+
 	// Use GOPATH if set, otherwise default
 	goPath := os.Getenv("GOPATH")
 	if goPath == "" {
 		goPath = homeDir + "/go"
 	}
-	
+
 	if goPkg, ok := goTools[pkg]; ok {
 		// Try with GOPROXY first to handle Go version issues
 		installCmd := fmt.Sprintf("GOBIN=%s/go/bin GOPROXY=direct go install -v %s 2>&1", homeDir, goPkg)
@@ -391,7 +391,7 @@ func installPackage(pkg string) string {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
 		out, err := cmd.CombinedOutput()
-		
+
 		// If direct proxy fails, try with version override
 		if err != nil && strings.Contains(string(out), "invalid go version") {
 			// Extract the module and try with -build flag
@@ -399,13 +399,13 @@ func installPackage(pkg string) string {
 			cmd = exec.CommandContext(ctx, "bash", "-c", installCmd)
 			out, err = cmd.CombinedOutput()
 		}
-		
+
 		if err != nil {
 			return fmt.Sprintf("[install %s failed: %s]\n%s", pkg, err, truncate(string(out)))
 		}
 		return fmt.Sprintf("[installed %s successfully]", pkg)
 	}
-	
+
 	// Detect package manager and build install command
 	var installCmd string
 
@@ -510,33 +510,33 @@ func isBlockedCommand(cmd string) string {
 	if reason := checkBlocked(cmd); reason != "" {
 		return reason
 	}
-	
+
 	// Try to decode and check base64 encoded commands
 	if decoded := tryBase64Decode(cmd); decoded != "" {
 		if reason := checkBlocked(decoded); reason != "" {
 			return reason + " (detected via base64 decoding)"
 		}
 	}
-	
+
 	// Try hex decoding
 	if decoded := tryHexDecode(cmd); decoded != "" {
 		if reason := checkBlocked(decoded); reason != "" {
 			return reason + " (detected via hex decoding)"
 		}
 	}
-	
+
 	// Try URL decoding
 	if decoded := tryURLDecode(cmd); decoded != "" && decoded != cmd {
 		if reason := checkBlocked(decoded); reason != "" {
 			return reason + " (detected via URL decoding)"
 		}
 	}
-	
+
 	// Check for common obfuscation patterns
 	if reason := checkObfuscation(cmd); reason != "" {
 		return reason
 	}
-	
+
 	return ""
 }
 
@@ -562,12 +562,12 @@ func tryBase64Decode(cmd string) string {
 	cmd = strings.TrimSuffix(cmd, "| base64 -d")
 	cmd = strings.TrimSuffix(cmd, "| base64 --decode")
 	cmd = strings.Trim(cmd, " \t\n")
-	
+
 	// Try standard base64
 	if decoded, err := decodeBase64(cmd); err == nil && len(decoded) > 0 {
 		return decoded
 	}
-	
+
 	return ""
 }
 
@@ -578,7 +578,7 @@ func decodeBase64(cmd string) (string, error) {
 	if missing != 4 {
 		cmd += strings.Repeat("=", missing)
 	}
-	
+
 	data, err := decode(cmd) // using the existing base64 decode
 	if err != nil {
 		return "", err
@@ -589,12 +589,12 @@ func decodeBase64(cmd string) (string, error) {
 // tryHexDecode attempts to decode a hex string
 func tryHexDecode(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
-	
+
 	// Check if it looks like hex (0x... or just hex chars)
 	if !isHexString(cmd) {
 		return ""
 	}
-	
+
 	data, err := decodeHex(cmd)
 	if err != nil {
 		return ""
@@ -617,12 +617,12 @@ func isHexString(s string) bool {
 // tryURLDecode attempts to URL decode a string
 func tryURLDecode(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
-	
+
 	// Must contain URL-encoded characters
 	if !strings.ContainsAny(cmd, "%") {
 		return ""
 	}
-	
+
 	// Use already imported net/url
 	// Since we don't have net/url imported, we'll do simple decoding
 	decoded := simpleURLDecode(cmd)
@@ -675,10 +675,10 @@ func extractCommands(cmd string) []string {
 		"git", "dirsearch", "feroxbuster", "testssl", "sslyze",
 		"okenv", "ds_store", "gitdumper", "githacker",
 	}
-	
+
 	found := make(map[string]bool)
 	lowerCmd := strings.ToLower(cmd)
-	
+
 	for _, tool := range tools {
 		// Check if tool appears as a standalone word in the command
 		patterns := []string{
@@ -695,7 +695,7 @@ func extractCommands(cmd string) []string {
 			}
 		}
 	}
-	
+
 	result := make([]string, 0, len(found))
 	for t := range found {
 		result = append(result, t)
@@ -706,7 +706,7 @@ func extractCommands(cmd string) []string {
 // checkObfuscation detects common obfuscation techniques
 func checkObfuscation(cmd string) string {
 	lower := strings.ToLower(cmd)
-	
+
 	// Check for character substitution obfuscation
 	// e.g., c'h'o'p, r\m -rf, etc.
 	obfuscationPatterns := []struct {
@@ -717,7 +717,7 @@ func checkObfuscation(cmd string) string {
 		{"\\\\x[0-9a-f]{2}", "hex escape obfuscation"},
 		{"\\$\\s*\\{", "variable expansion obfuscation"},
 	}
-	
+
 	for _, op := range obfuscationPatterns {
 		if matched, _ := regexp.MatchString(op.pattern, lower); matched {
 			// Check if the deobfuscated content would be dangerous
@@ -725,7 +725,6 @@ func checkObfuscation(cmd string) string {
 			return "obfuscated command detected: " + op.reason
 		}
 	}
-	
+
 	return ""
 }
-

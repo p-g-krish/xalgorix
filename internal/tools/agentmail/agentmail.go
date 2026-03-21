@@ -24,21 +24,21 @@ type AgentMail struct {
 
 // Message represents an email message
 type Message struct {
-	ID        string   `json:"id"`
-	Subject   string   `json:"subject"`
-	From      string   `json:"from"`
-	To        string   `json:"to"`
-	Body      string   `json:"body"`
-	HTMLBody string   `json:"html_body"`
-	Date      string   `json:"date"`
+	ID          string       `json:"id"`
+	Subject     string       `json:"subject"`
+	From        string       `json:"from"`
+	To          string       `json:"to"`
+	Body        string       `json:"body"`
+	HTMLBody    string       `json:"html_body"`
+	Date        string       `json:"date"`
 	Attachments []Attachment `json:"attachments"`
 }
 
 // Attachment represents an email attachment
 type Attachment struct {
-	ID       string `json:"id"`
-	Filename string `json:"filename"`
-	Size     int    `json:"size"`
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	Size        int    `json:"size"`
 	ContentType string `json:"content_type"`
 }
 

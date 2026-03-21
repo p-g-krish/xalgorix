@@ -90,14 +90,14 @@ type chatResponse struct {
 func (c *Client) resolveEndpoint() (string, string) {
 	apiBase := c.cfg.APIBase
 	model := c.apiModel
-	
+
 	// Extract provider prefix if present (e.g., "openai/gpt-4o" -> provider="openai", model="gpt-4o")
 	provider := ""
 	if idx := strings.Index(model, "/"); idx >= 0 {
 		provider = strings.ToLower(model[:idx])
 		model = model[idx+1:]
 	}
-	
+
 	// Auto-detect API base based on provider prefix if XALGORIX_API_BASE not set
 	if apiBase == "" {
 		switch provider {
@@ -120,7 +120,7 @@ func (c *Client) resolveEndpoint() (string, string) {
 			apiBase = "https://api.openai.com/v1"
 		}
 	}
-	
+
 	apiBase = strings.TrimRight(apiBase, "/")
 
 	// Build the URL based on provider
