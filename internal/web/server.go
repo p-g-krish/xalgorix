@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.5.1"
+const version = "1.5.2-beta"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -716,8 +716,11 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 				filepath.Join(s.currentScanDir, "live_resolved.txt"),
 				filepath.Join(s.currentScanDir, "all_discovered_subdomains.txt"),
 			}
+
+			log.Printf("[DEBUG] Looking for subdomains in: %s", s.currentScanDir)
 			
 			for _, subdomainsFile := range possibleFiles {
+				log.Printf("[DEBUG] Checking file: %s", subdomainsFile)
 				subdomainsData, err := os.ReadFile(subdomainsFile)
 				if err == nil {
 					for _, line := range strings.Split(string(subdomainsData), "\n") {
@@ -735,6 +738,7 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 							subdomains = append(subdomains, parts[0])
 						}
 					}
+					log.Printf("[DEBUG] Found %d subdomains in %s", len(subdomains), subdomainsFile)
 					if len(subdomains) > 0 {
 						break
 					}
