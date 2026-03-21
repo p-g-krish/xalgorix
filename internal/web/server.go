@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/reporting"
 )
 
-const version = "1.4.16"
+const version = "1.5.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -786,116 +786,12 @@ STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue e
 				s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 				os.MkdirAll(s.currentScanDir, 0755)
 
-				// Build comprehensive single-target instruction
-				scanInstruction := fmt.Sprintf(`PHASE 2: COMPREHENSIVE VULNERABILITY SCAN ON: %s
-
-This is a SINGLE TARGET vulnerability assessment. You have unlimited iterations. Think DEEPER than automated tools - they only find the obvious.
-
-TARGET: %s
-
-## CRITICAL: THINK OUT OF THE BOX
-Automated tools miss 80%% of vulnerabilities. You must think and test MANUALLY:
-1. What is this application's BUSINESS LOGIC? Understand how it works.
-2. What happens if I manipulate this request in UNEXPECTED ways?
-3. What if this parameter is used in a DIFFERENT context than intended?
-4. What hidden functionality might exist that tools don't find?
-5. Can I chain multiple low-severity findings into a CRITICAL chain?
-
-## TOOLS ARE JUST A START - THINK AFTER THEM
-Tools find obvious bugs. YOU find the complex ones. After each tool:
-- Ask: "What did this MISS?"
-- Try variations the tool didn't test
-- Test edge cases and unexpected inputs
-- Look for race conditions, timing vulnerabilities
-- Check for business logic flaws
-
-Perform these phases in order:
-
-## PHASE 2A: DEEP RECON (THINK while scanning)
-- nmap -sV -sC -T4 -A -p- --open -oN ./nmap.txt https://%s
-- whatweb -v -a 3 https://%s 2>/dev/null
-- httpx -silent -status-code -title -tech-detect -follow-redirects -o ./httpx.txt
-
-THEN THINK: What technologies did you find? What are their known vulnerabilities? Research CVE for these versions!
-
-## PHASE 2B: DEEP CRAWLING (beyond what tools see)
-- gospider -s https://%s --depth 3 -o ./gospider/ 2>/dev/null
-- katana -u https://%s -d 5 -jc -kf -ef css,png,jpg -o ./katana.txt 2>/dev/null
-- gau %s --threads 5 -o ./gau.txt
-- waybackurls %s | sort -u | tee ./wayback.txt
-
-# Scrapling - Anti-bot/WAF bypass crawling (CRITICAL for protected sites!)
-- python3 -m venv ~/xalgorix-venv && source ~/xalgorix-venv/bin/activate && pip install scrapling 2>/dev/null || true
-- source ~/xalgorix-venv/bin/activate && scrapling --url "https://%s" --depth 2 --output ./scrapling.json 2>/dev/null || true
-- Extract URLs from scrapling output and test them
-
-THEN MANUALLY CHECK:
-- Are there admin panels, debug endpoints, backup files?
-- Check for exposed .git, .env, config files, .swp
-- Look for old versions at /old, /backup, /v1, /api/v1
-- Check for debug mode: /debug, /trace, /health
-
-## PHASE 2C: PARAMETER DISCOVERY (find hidden params)
-- paramspider -d %s -o ./params.txt 2>/dev/null || true
-- arjun -u https://%s -m GET -w ~/wordlists parameters.txt -t 20 -o ./arjun.txt 2>/dev/null || true
-
-THEN MANUALLY FIND MORE:
-- Check common param names: id, user, file, q, search, query, token, key, secret
-- Try HTTP methods: PUT, DELETE, PATCH on all endpoints
-- Test headers: X-Forwarded-For, X-Real-IP, X-API-Key, Authorization
-- Test cookies as inputs
-
-## PHASE 2D: CREATIVE VULNERABILITY TESTING
-Test with YOUR BRAIN - not just tools:
-
-### SQL Injection - THINK:
-- Tools test basic payloads. You test: TIME-based, STACKED queries, second-order, UNION on non-integer IDs
-- Try: admin'--, admin' or 1=1--, ' waitfor delay
-- Test in headers, cookies, user-agent
-- Bypass: /**/, %00, null bytes, encoding variations
-
-### XSS - THINK:
-- Tools miss DOM-based, Stored with filters
-- Try: <script>alert(1)</script> but also: <img src=x onerror=alert(1)>, <svg onload=alert(1)>
-- Test in URL fragments (#), referer, user-agent
-- Bypass: <scr\x00ipt>, <ScRiPt>, event handlers tools miss
-
-### SSRF - THINK:
-- Tools test basic URLs. You test: internal IPs, cloud metadata, port scanning
-- Try: http://169.254.169.254/latest/meta-data/, http://localhost:port
-- Test via Referer, X-Forwarded-For
-
-### IDOR - THINK:
-- Not just ID=1 vs ID=2 - test UUIDs, emails, usernames
-- Test horizontal and vertical privilege escalation
-- Check if changing JSON keys reveals more data
-
-### RCE/Command Injection - THINK:
-- Test in every input: headers, cookies, params, filenames
-- Try: ;whoami, |whoami, $(whoami), commandInjection, %0a
-- Test for blind RCE with time delays
-
-## PHASE 2E: BUSINESS LOGIC TESTING (think like an attacker)
-- Can you bypass payment/discounts?
-- Can you manipulate quantity to negative?
-- Can you access other users' data by changing IDs?
-- Can you escalate privileges?
-- Can you bypass rate limits?
-- Can you trigger race conditions?
-
-## PHASE 2F: MANUAL EXPLOITATION
-For each finding, MANUALLY exploit:
-- SQLi: Extract data, don't just confirm
-- XSS: Try cookie theft, keylogging
-- SSRF: Access cloud metadata, internal services
-- Auth bypass: Create admin account, access admin panel
-- IDOR: View all data, not just one user's
-
-Document EVERYTHING in add_note. THINK before each test. Automated tools are dumb - YOU are smart.`, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain, subdomain)
-			// Append user's custom instructions if provided
-			if req.Instruction != "" {
-				scanInstruction += "\n\n" + req.Instruction
-			}
+				// Build autonomous single-target instruction
+				scanInstruction := buildAutonomousInstruction(subdomain, req.Instruction)
+				// Append user's custom instructions if provided
+				if req.Instruction != "" {
+					scanInstruction += "\n\n" + req.Instruction
+				}
 
 				s.broadcast(WSEvent{
 					Type:         "target_started",
