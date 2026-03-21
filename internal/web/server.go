@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "1.5.3"
+const version = "1.5.4"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -648,10 +648,10 @@ func (s *Server) runMultiScan(req ScanRequest) {
 
 Your ONLY task in this phase is to discover ALL subdomains. Do NOT run any vulnerability scans yet.
 
-Execute these commands in order and save ALL results to the CURRENT DIRECTORY (./):
+Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.):
 
-# Passive subdomain enumeration (no direct contact) - ALWAYS USE MAX THREADS AND ALL FLAGS!
-1. subfinder -d TARGET -passive -recursive -o ./passive_subfinder.txt
+# Passive subdomain enumeration (subfinder is passive by default)
+1. subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
 2. subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
 3. curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
 4. findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
@@ -662,32 +662,18 @@ Execute these commands in order and save ALL results to the CURRENT DIRECTORY (.
 # Archive enumeration
 8. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
 
-# Active subdomain enumeration (direct contact) - USE MAXIMUM THREADS AND WORDLISTS!
+# Active subdomain enumeration (direct contact)
 9. subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
 10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
-11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 100 -o ./active_wordlist2.txt 2>/dev/null || true
 
 # Merge ALL subdomains
-13. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
-14. wc -l ./all_discovered_subdomains.txt
+11. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
+12. wc -l ./all_discovered_subdomains.txt
 
-# Resolve subdomains to find live hosts - USE MAX THREADS!
-15. cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
-16. cat ./live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ./live_subdomains.txt
-17. wc -l ./live_subdomains.txt
-9. subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
-10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
-11. subfinder -d TARGET -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 100 -o ./active_wordlist2.txt 2>/dev/null || true
-
-
-# Merge ALL subdomains
-13. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
-14. wc -l ./all_discovered_subdomains.txt
-
-# Resolve subdomains to find live hosts - USE MAX THREADS!
-15. cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
-16. cat ./live_resolved.txt | cut -d' ' -1 | grep -v '^$' | sort -u > ./live_subdomains.txt
-17. wc -l ./live_subdomains.txt
+# Resolve subdomains to find live hosts
+13. cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
+14. cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
+15. wc -l ./live_subdomains.txt
 
 # IMPORTANT: After completing subdomain enumeration, you MUST call add_note with the full list of discovered subdomains (from ./live_subdomains.txt) so they can be queued for individual scanning.
 
