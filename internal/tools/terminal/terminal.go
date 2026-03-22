@@ -155,7 +155,7 @@ func Register(r *tools.Registry) {
 		Description: "Execute a shell command in the terminal. Returns stdout, stderr, and exit code. Automatically installs missing tools.",
 		Parameters: []tools.Parameter{
 			{Name: "command", Description: "The shell command to execute", Required: true},
-			{Name: "timeout", Description: "Timeout in seconds (default: 120)", Required: false},
+			{Name: "timeout", Description: "Timeout in seconds (default: 1800 = 30 min). Most pentest tools need 5-30 minutes.", Required: false},
 		},
 		Execute: executeCommand,
 	})
@@ -187,7 +187,7 @@ func executeCommand(args map[string]string) (tools.Result, error) {
 		}
 	}
 
-	timeoutSec := 120
+	timeoutSec := 1800 // 30 minutes — pentesting tools (nmap, sqlmap, ffuf) need time
 	if t, ok := args["timeout"]; ok {
 		fmt.Sscanf(t, "%d", &timeoutSec)
 	}
@@ -392,7 +392,7 @@ func installPackage(pkg string) string {
 	if goPkg, ok := goTools[pkg]; ok {
 		// Try with GOPROXY first to handle Go version issues
 		installCmd := fmt.Sprintf("GOBIN=%s/go/bin GOPROXY=direct go install -v %s 2>&1", homeDir, goPkg)
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second) // 10 min for tool install
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
 		out, err := cmd.CombinedOutput()
@@ -433,7 +433,7 @@ func installPackage(pkg string) string {
 		installCmd = "sudo " + installCmd
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second) // 10 min for pip install
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)

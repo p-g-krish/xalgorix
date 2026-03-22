@@ -21,7 +21,7 @@ func Register(r *tools.Registry) {
 		Description: "Execute Python code in a subprocess. Python 3 must be installed.",
 		Parameters: []tools.Parameter{
 			{Name: "code", Description: "Python code to execute", Required: true},
-			{Name: "timeout", Description: "Timeout in seconds (default: 60)", Required: false},
+			{Name: "timeout", Description: "Timeout in seconds (default: 1800 = 30 min)", Required: false},
 		},
 		Execute: executePython,
 	})
@@ -33,7 +33,7 @@ func executePython(args map[string]string) (tools.Result, error) {
 		return tools.Result{}, fmt.Errorf("code is required")
 	}
 
-	timeoutSec := 60
+	timeoutSec := 1800 // 30 minutes — exploit scripts can run long
 	if t := args["timeout"]; t != "" {
 		fmt.Sscanf(t, "%d", &timeoutSec)
 	}

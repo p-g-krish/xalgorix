@@ -319,7 +319,7 @@ func Register(r *tools.Registry) {
 			{Name: "subject", Description: "Email subject (for send_email, wait_for_email)", Required: false},
 			{Name: "body", Description: "Email body (for send_email)", Required: false},
 			{Name: "message_id", Description: "Message ID (for get_message)", Required: false},
-			{Name: "timeout", Description: "Timeout in seconds for wait_for_email (default: 120)", Required: false},
+			{Name: "timeout", Description: "Timeout in seconds for wait_for_email (default: 300 = 5 min)", Required: false},
 		},
 		Execute: func(args map[string]string) (tools.Result, error) {
 			action := args["action"]
@@ -390,7 +390,7 @@ func Register(r *tools.Registry) {
 			case "wait_for_email":
 				inboxID := args["inbox_id"]
 				subject := args["subject"]
-				timeout := 120
+				timeout := 300 // 5 minutes for email
 				if t, ok := args["timeout"]; ok {
 					fmt.Sscanf(t, "%d", &timeout)
 				}

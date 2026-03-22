@@ -142,11 +142,11 @@ func (a *Agent) startWatchdog() func() {
 			case <-ticker.C:
 				since := time.Since(a.lastActivity)
 				// If no activity for 10 minutes, emit warning
-				if since > 10*time.Minute {
+				if since > 30*time.Minute {
 					a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ Watchdog: No activity for %v. Still working...", since.Round(time.Minute))})
 				}
 				// If no activity for 30 minutes, force stop
-				if since > 30*time.Minute {
+				if since > 60*time.Minute {
 					a.emit(Event{Type: "error", Content: "⚠️ Watchdog: Agent stuck for 30 minutes. Force stopping."})
 					a.cancel()
 					return
