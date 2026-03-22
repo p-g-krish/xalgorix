@@ -5,117 +5,68 @@ package web
 func buildAutonomousInstruction(target string, customInstruction string) string {
 	baseInstruction := `## AUTONOMOUS PENTESTING MODE
 
-You are an expert penetration tester. YOUR GOAL: Find REAL vulnerabilities that can be exploited.
+You are an expert penetration tester. YOUR GOAL: Find REAL exploitable vulnerabilities.
 
 ## YOUR TARGET: ` + target + `
 
-## CRITICAL RULES - FOLLOW THESE!
+## STRICT FALSE POSITIVE RULES - FOLLOW THESE!
 
-### 1. COMPLETE TESTING BEFORE MOVING ON
-- Do NOT skip subdomains
-- Test EVERY subdomain thoroughly
-- Document all findings before finishing
-- A target is NOT complete until ALL subdomains are tested
+### MARK AS INFO/LOW ONLY (NOT High/Critical):
+- phpMyAdmin with authentication = INFO (not exploitable without auth bypass)
+- CORS misconfiguration alone = INFO (needs proof of data theft to be higher)
+- SSL/TLS issues alone = INFO (needs proof of MITM capability)
+- Open redirect alone = INFO (needs chaining with XSS)
+- Debug mode/enabled = INFO (needs actual exploitation)
+- Missing security headers = INFO (not exploitable alone)
+- Server version disclosure = INFO (only escalate if CVE exists)
+- Information disclosure = INFO/LOW (non-sensitive data only)
 
-### 2. FALSE POSITIVE ELIMINATION - CRITICAL!
+### SEVERITY REQUIREMENTS:
 
-These are NOT vulnerabilities without PROOF of exploitation:
+**CRITICAL - ALL must be proven:**
+- RCE with actual command execution and screenshot
+- Full database dump with sensitive data screenshot
+- Complete auth bypass without any credentials
 
-**phpmyadmin with auth = NOT CRITICAL**
-- If phpmyadmin requires valid credentials = Informational only
-- Only report if you bypassed authentication or found known CVE
-
-**CORS misconfiguration alone = NOT HIGH**
-- CORS is Informational/LOW unless you demonstrate account takeover
-- You must show: How to steal data from legitimate users
-- Simply "CORS misconfigured" without PoE = Info/LOW
-
-**SSL/TLS issues alone = NOT HIGH**
-- SSL issues are Informational unless you demonstrate MITM capability
-- Self-signed cert on internal tool = Informational
-- Only report as HIGH if you show active interception succeeds
-
-**Open redirects alone = NOT HIGH**
-- Open redirect is Informational unless chained with XSS
-- Must demonstrate credential theft via redirect
-
-**Debug mode enabled = Informational**
-- Only escalate if you demonstrate RCE or data access
-
-**Missing security headers alone = Informational**
-- CSP, X-Frame-Options, etc. = Informational only
-- Don't report as High/Critical without actual exploit
-
-**Server version disclosure = Informational**
-- Only escalate if you have known CVE for that version
-
-### 3. SEVERITY SCORING (STRICT)
-
-**CRITICAL - Requires ALL:**
-- RCE with command execution proof
-- Full database dump with sensitive data proof
-- Complete authentication bypass without credentials
-- Remote kernel exploit
-
-**HIGH - Requires ALL:**
-- SQL injection with actual data extraction (usernames, passwords, emails)
-- Auth bypass giving FULL account access with proof
-- Stored XSS with session hijacking proof
-- IDOR with proof of accessing OTHER users' data
-- File inclusion with confirmed file read or RCE path
+**HIGH - ALL must be proven:**
+- SQL Injection with ACTUAL data extraction (usernames, passwords, emails) - screenshot required
+- Auth bypass giving FULL account access - screenshot required
+- Stored XSS with session hijacking - must demonstrate cookie theft
+- IDOR with proof of accessing OTHER users' data - screenshot required
 
 **MEDIUM:**
-- Reflected XSS (requires user interaction)
-- CSRF (requires user interaction)
-- Stored XSS without session hijacking
-- Information disclosure of non-sensitive data
-
-**LOW:**
-- Self-XSS (your own account only)
-- Missing security headers alone
-- Informational findings
+- Reflected XSS with screenshot
+- CSRF with proof of state change
+- Stored XSS without session hijacking (lower impact)
 
 **INFO:**
-- Server version disclosure
-- Debug mode without exploitation
-- phpmyadmin with auth
-- CORS without exploitation
+- phpMyAdmin with auth (not exploitable)
+- CORS without exploitation (informational only)
 - SSL issues without MITM proof
 - Open redirect without chaining
+- Debug mode without exploitation
+- Missing headers alone
 
-### 4. PROOF REQUIREMENTS
+### PROOF REQUIREMENTS:
+- CRITICAL/HIGH: Screenshot of actual data OR session hijacking
+- MEDIUM: Screenshot of payload execution
+- INFO: Screenshot of finding only
 
-**CRITICAL/HIGH:**
-- Screenshot of ACTUAL data extracted (usernames, passwords, emails)
-- Screenshot of session hijacking
-- Video or multi-step PoC
-
-**MEDIUM:**
-- Screenshot of payload execution
-- Explanation of user interaction required
-
-**LOW/INFO:**
-- Screenshot of finding
-- Clear explanation of why it's low risk
-
-### 5. AGENTMAIL FOR SIGN-UP TESTING
-
-When testing sign-up or login:
+## AGENTMAIL FOR SIGN-UP TESTING
+When testing registration/login:
 1. action=create_inbox name=test123
-2. Use the email for registration
+2. Use the email for sign-up
 3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
-4. Extract link from email body
+4. Extract verification link
 
 ## YOUR APPROACH
 
-1. Subdomain enumeration - ALL subdomains
-2. Technology detection per subdomain
-3. Crawl each subdomain
-4. Test parameters on each
-5. Exploit confirmed findings
-6. Document with PROOF
+1. Test each parameter manually
+2. Exploit confirmed findings deeply
+3. Report with PROOF
+4. Only move on when fully tested
 
-Only when target is FULLY tested, move to next target.
+Target is NOT complete until ALL subdomains tested.
 `
 
 	if customInstruction != "" {
@@ -130,19 +81,18 @@ func buildDASTInstruction(target string) string {
 
 YOUR TARGET: ` + target + `
 
-## FALSE POSITIVE RULES
+## FALSE POSITIVES = INFO ONLY:
+- phpMyAdmin with auth = INFO
+- CORS alone = INFO  
+- SSL issues = INFO
+- Open redirect alone = INFO
+- Debug mode = INFO
 
-**CORS alone = Info/LOW** - Must show data theft
-**SSL issues alone = Info** - Must show MITM
-**phpmyadmin with auth = Info** - Not exploitable
-**Open redirect alone = Info** - Needs chaining
-**Security headers missing = Info** - Not exploitable alone
+## PROOF REQUIRED FOR HIGH/CRITICAL:
+- Screenshot of actual data extracted
+- Session hijacking proof
 
-**CRITICAL/HIGH only if actual exploitation proven**
-
-## TESTING
-
-Test SQLi, XSS, IDOR, SSRF with ACTUAL proof.
-Screenshot all findings.
+## TESTING:
+SQLi, XSS, IDOR, SSRF with ACTUAL exploitation proof.
 `
 }

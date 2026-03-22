@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "1.8.0"
+const version = "1.9.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -644,37 +644,51 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			// PHASE 1: First do comprehensive subdomain enumeration
-			discoveryInstruction := `# IMPORTANT: You are in the correct scan directory. Create it if needed and start:
+			discoveryInstruction := `# IMPORTANT: You are in the correct scan directory.
+# Create it if needed:
 mkdir -p ./ && echo "Starting subdomain enumeration in $(pwd)"
 
-# Passive subdomain enumeration (subfinder is passive by default)
-1. subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
-2. subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
-3. curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
-4. findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
-5. assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt 2>/dev/null || true
-6. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
-7. curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
+# Subdomain enumeration commands - run ALL of these:
 
-# Archive enumeration
-8. curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
+# 1. Passive enumeration (subfinder is passive by default)
+subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
+subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
 
-# Active subdomain enumeration (direct contact)
-9. subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
-10. subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
+# 2. Certificate Transparency
+curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
 
-# Merge ALL subdomains
-11. cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
-12. wc -l ./all_discovered_subdomains.txt
+# 3. Findomain
+findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
 
-# Resolve subdomains to find live hosts
-13. cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
-14. cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
-15. wc -l ./live_subdomains.txt
+# 4. Assetfinder
+assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt 2>/dev/null || true
 
-# IMPORTANT: After completing subdomain enumeration, you MUST call add_note with the full list of discovered subdomains (from ./live_subdomains.txt) so they can be queued for individual scanning.
+# 5. DNS Buffer Over
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
 
-STOP HERE. Do NOT proceed to vulnerability scanning. The system will now queue each discovered subdomain for comprehensive vulnerability assessment.`
+# 6. Wayback Machine
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
+
+# 7. Active enumeration
+subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
+subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
+
+# 8. Merge ALL subdomains
+cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
+wc -l ./all_discovered_subdomains.txt
+
+# 9. Resolve to find live hosts
+cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
+cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
+wc -l ./live_subdomains.txt
+
+# IMPORTANT: After completing, you MUST call add_note with the full list of discovered subdomains from ./live_subdomains.txt
+
+STOP HERE. Do NOT proceed to vulnerability scanning. The system will queue each subdomain for individual scanning.`
+
+			// Replace TARGET placeholder with actual target
+			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)
 			// Append user's custom instructions if provided
 			if req.Instruction != "" {
 				discoveryInstruction += "\n\n" + req.Instruction
