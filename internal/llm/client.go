@@ -125,7 +125,16 @@ func (c *Client) resolveEndpoint() (string, string) {
 
 	// Build the URL based on provider
 	url := apiBase
-	if !strings.Contains(apiBase, "anthropic") && !strings.Contains(apiBase, "google") {
+	if strings.Contains(apiBase, "anthropic") {
+		// Anthropic uses /v1/messages
+		if !strings.HasSuffix(apiBase, "/v1") && !strings.Contains(apiBase, "/v1/") {
+			url += "/v1"
+		}
+		url += "/messages"
+	} else if strings.Contains(apiBase, "google") || strings.Contains(apiBase, "generativelanguage") {
+		// Google Gemini uses /v1beta/models/MODEL:generateContent
+		url += "beta/models/" + model + ":generateContent"
+	} else {
 		if !strings.HasSuffix(apiBase, "/v1") && !strings.Contains(apiBase, "/v1/") {
 			url += "/v1"
 		}

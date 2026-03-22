@@ -32,6 +32,13 @@ var (
 
 	// Normalize quotes around = in tags: <function = "name"> → <function=name>
 	stripQuotesRe = regexp.MustCompile(`<(function|parameter)\s*=\s*["']?([^>"']+?)["']?\s*>`)
+
+	// CleanContent regexes — compiled once
+	toolPattern    = regexp.MustCompile(`(?s)<function=[^>]+>.*?</function>`)
+	incompleteFunc = regexp.MustCompile(`(?s)<function=[^>]+>.*$`)
+	interAgentRe   = regexp.MustCompile(`(?is)<inter_agent_message>.*?</inter_agent_message>`)
+	agentReportRe  = regexp.MustCompile(`(?is)<agent_completion_report>.*?</agent_completion_report>`)
+	multiBlankRe   = regexp.MustCompile(`\n\s*\n`)
 )
 
 // ParseToolCalls extracts tool calls from LLM XML output.
@@ -191,22 +198,11 @@ func CleanContent(content string) string {
 	content = normalizeFormat(content)
 	content = fixIncomplete(content)
 
-	toolPattern := regexp.MustCompile(`(?s)<function=[^>]+>.*?</function>`)
 	cleaned := toolPattern.ReplaceAllString(content, "")
-
-	incomplete := regexp.MustCompile(`(?s)<function=[^>]+>.*$`)
-	cleaned = incomplete.ReplaceAllString(cleaned, "")
-
-	for _, pat := range []string{
-		`<inter_agent_message>.*?</inter_agent_message>`,
-		`<agent_completion_report>.*?</agent_completion_report>`,
-	} {
-		re := regexp.MustCompile(`(?is)` + pat)
-		cleaned = re.ReplaceAllString(cleaned, "")
-	}
-
-	multiBlank := regexp.MustCompile(`\n\s*\n`)
-	cleaned = multiBlank.ReplaceAllString(cleaned, "\n\n")
+	cleaned = incompleteFunc.ReplaceAllString(cleaned, "")
+	cleaned = interAgentRe.ReplaceAllString(cleaned, "")
+	cleaned = agentReportRe.ReplaceAllString(cleaned, "")
+	cleaned = multiBlankRe.ReplaceAllString(cleaned, "\n\n")
 
 	return strings.TrimSpace(cleaned)
 }

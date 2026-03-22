@@ -149,7 +149,10 @@ func main() {
 		}
 
 		// Rename to actual path (atomic on same filesystem)
-		os.Rename(installPath+".new", installPath)
+		if err := os.Rename(installPath+".new", installPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to replace binary: %v\n", err)
+			os.Exit(1)
+		}
 
 		fmt.Println("✅ Updated successfully!")
 
@@ -366,6 +369,10 @@ func handleStart() {
 	time.Sleep(1 * time.Second)
 
 	// Create systemd service file
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/root"
+	}
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Xalgorix - Autonomous AI Pentesting Engine
 After=network.target
@@ -373,10 +380,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root
-Environment="PATH=$HOME/go/bin:/home/vulture/go/bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="GOPATH=/root/.go"
-Environment="GOPATH=/root/go"
+WorkingDirectory=%s
+Environment="PATH=%s/go/bin:%s/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="GOPATH=%s/go"
 EnvironmentFile=%s/.xalgorix.env
 ExecStart=%s --web
 Restart=always
@@ -384,7 +390,7 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-`, os.Getenv("HOME"), installPath)
+`, home, home, home, home, home, installPath)
 	// Try to write service file (requires sudo)
 	servicePath := "/etc/systemd/system/xalgorix.service"
 	err := os.WriteFile(servicePath, []byte(serviceContent), 0644)
@@ -441,7 +447,11 @@ func startBackground() {
 	installPath := filepath.Join(goPath, "bin", "xalgorix")
 
 	// Start via bash to source env file
-	startCmd := exec.Command("/bin/bash", "-c", "source /root/.xalgorix.env && "+installPath+" --web")
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir = "/root"
+	}
+	startCmd := exec.Command("/bin/bash", "-c", "source "+homeDir+"/.xalgorix.env && "+installPath+" --web")
 	startCmd.Stdout = logFile
 	startCmd.Stderr = logFile
 	startCmd.Env = os.Environ()
@@ -475,8 +485,8 @@ func handleStop() {
 	err := cmd.Run()
 
 	if err != nil {
-		// Fallback: pkill
-		cmd = exec.Command("pkill", "-f", "xalgorix")
+		// Fallback: pkill (exclude the current --stop process)
+		cmd = exec.Command("pkill", "-f", "xalgorix.*--web")
 		cmd.Run()
 	}
 

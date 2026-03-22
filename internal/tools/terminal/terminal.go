@@ -48,15 +48,22 @@ func KillAllProcesses() {
 }
 
 // Global working directory override for terminal commands
-var workDirOverride string
+var (
+	workDirOverride string
+	workDirMu       sync.Mutex
+)
 
 // SetWorkDir sets the working directory for terminal commands
 func SetWorkDir(dir string) {
+	workDirMu.Lock()
+	defer workDirMu.Unlock()
 	workDirOverride = dir
 }
 
 // GetWorkDir returns the current working directory override
 func GetWorkDir() string {
+	workDirMu.Lock()
+	defer workDirMu.Unlock()
 	return workDirOverride
 }
 
@@ -186,11 +193,6 @@ func executeCommand(args map[string]string) (tools.Result, error) {
 	}
 
 	// Run the command
-	if t, ok := args["timeout"]; ok {
-		fmt.Sscanf(t, "%d", &timeoutSec)
-	}
-
-	// Run the command
 	output, exitCode := runShell(command, timeoutSec)
 
 	// Check for "command not found" and auto-install
@@ -270,8 +272,11 @@ func runShell(command string, timeoutSec int) (string, int) {
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	// Use workDirOverride if set, otherwise default to config workspace
-	if workDirOverride != "" {
-		cmd.Dir = workDirOverride
+	workDirMu.Lock()
+	wd := workDirOverride
+	workDirMu.Unlock()
+	if wd != "" {
+		cmd.Dir = wd
 	} else {
 		cmd.Dir = cfg.Workspace
 	}
@@ -395,7 +400,7 @@ func installPackage(pkg string) string {
 		// If direct proxy fails, try with version override
 		if err != nil && strings.Contains(string(out), "invalid go version") {
 			// Extract the module and try with -build flag
-			installCmd = fmt.Sprintf("GOBIN=/root/go/bin go install -v -buildflags '-mod=mod' %s 2>&1", goPkg)
+			installCmd = fmt.Sprintf("GOBIN=%s/go/bin go install -v -buildflags '-mod=mod' %s 2>&1", homeDir, goPkg)
 			cmd = exec.CommandContext(ctx, "bash", "-c", installCmd)
 			out, err = cmd.CombinedOutput()
 		}
@@ -497,7 +502,6 @@ var blockedPatterns = []struct {
 	{"drop database", "SQL DROP DATABASE"},
 	{"delete from", "SQL DELETE FROM"},
 	{"truncate table", "SQL TRUNCATE TABLE"},
-	{"update ", "SQL UPDATE (use SELECT to verify instead)"},
 	// Python destructive
 	{"shutil.rmtree", "recursive directory removal"},
 	{"os.remove", "file deletion"},
@@ -700,6 +704,16 @@ func extractCommands(cmd string) []string {
 	for t := range found {
 		result = append(result, t)
 	}
+
+	// Also check if the command starts with a known tool
+	cmdTrimmed := strings.TrimSpace(lowerCmd)
+	for _, tool := range tools {
+		if strings.HasPrefix(cmdTrimmed, tool+" ") || cmdTrimmed == tool {
+			found[tool] = true
+			result = append(result, tool)
+		}
+	}
+
 	return result
 }
 
@@ -715,7 +729,6 @@ func checkObfuscation(cmd string) string {
 	}{
 		{"chr\\s*\\(", "character code obfuscation"},
 		{"\\\\x[0-9a-f]{2}", "hex escape obfuscation"},
-		{"\\$\\s*\\{", "variable expansion obfuscation"},
 	}
 
 	for _, op := range obfuscationPatterns {

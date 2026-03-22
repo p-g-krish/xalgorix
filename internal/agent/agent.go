@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xalgord/xalgorix/internal/config"
@@ -50,9 +51,10 @@ type Agent struct {
 	client   *llm.Client
 	registry *tools.Registry
 	messages []llm.Message
+	msgMu    sync.Mutex
 	events   chan Event
 	maxIter  int
-	stopped  bool
+	stopped  atomic.Bool
 	ctx      context.Context
 	cancel   context.CancelFunc
 	lastActivity time.Time
@@ -180,7 +182,7 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
-	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
+	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		// Reset activity watchdog on each iteration
 		a.lastActivity = time.Now()
 		
@@ -211,7 +213,9 @@ func (a *Agent) Run(targets []string, instruction string) {
 			a.emit(Event{Type: "message", Content: cleanText, TotalTokens: tokenCount()})
 		}
 
+		a.msgMu.Lock()
 		a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
+		a.msgMu.Unlock()
 
 		// Parse tool calls from the cleaned (think-stripped) response
 		toolCalls := llm.ParseToolCalls(responseClean)
@@ -234,12 +238,16 @@ To finish the task, use:
 </function>
 
 Call a tool NOW in your next response.`
+			a.msgMu.Lock()
 				a.messages = append(a.messages, llm.Message{Role: "user", Content: nudge})
+				a.msgMu.Unlock()
 			} else {
+				a.msgMu.Lock()
 				a.messages = append(a.messages, llm.Message{
 					Role:    "user",
 					Content: "Please use the available tools by calling them with the XML format shown in the system prompt. Do not just describe what you would do — actually call the tools.",
 				})
+				a.msgMu.Unlock()
 			}
 			continue
 		}
@@ -247,7 +255,7 @@ Call a tool NOW in your next response.`
 		noToolCount = 0 // Reset counter on successful tool call
 
 		for _, tc := range toolCalls {
-			if a.stopped {
+			if a.stopped.Load() {
 				break
 			}
 
@@ -275,7 +283,9 @@ Call a tool NOW in your next response.`
 			}
 
 			resultMsg := formatToolResult(tc.Name, result)
+			a.msgMu.Lock()
 			a.messages = append(a.messages, llm.Message{Role: "user", Content: resultMsg})
+			a.msgMu.Unlock()
 		}
 	}
 
@@ -284,7 +294,7 @@ Call a tool NOW in your next response.`
 
 // Stop signals the agent to stop and kills all running processes.
 func (a *Agent) Stop() {
-	a.stopped = true
+	a.stopped.Store(true)
 
 	// Cancel context to stop any blocking operations
 	if a.cancel != nil {
@@ -302,16 +312,25 @@ func (a *Agent) SendMessage(message string) (string, error) {
 	}
 
 	// Add user message
+	a.msgMu.Lock()
 	a.messages = append(a.messages, llm.Message{Role: "user", Content: message})
+	a.msgMu.Unlock()
 
 	// Get response from LLM
-	response, err := a.client.Chat(a.messages)
+	a.msgMu.Lock()
+	msgs := make([]llm.Message, len(a.messages))
+	copy(msgs, a.messages)
+	a.msgMu.Unlock()
+
+	response, err := a.client.Chat(msgs)
 	if err != nil {
 		return "", err
 	}
 
 	// Add assistant response to messages
+	a.msgMu.Lock()
 	a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
+	a.msgMu.Unlock()
 
 	return response, nil
 }
@@ -384,6 +403,7 @@ func (a *Agent) emit(evt Event) {
 		select {
 		case a.events <- evt:
 		default:
+			log.Printf("⚠️ Event channel full, dropped event type=%s tool=%s", evt.Type, evt.ToolName)
 		}
 	}
 }
@@ -396,7 +416,42 @@ func (a *Agent) buildSystemPrompt(targets []string, instruction string) string {
 		checklist = instruction + "\n\n" + checklist
 	}
 
-	return fmt.Sprintf(`You are an elite autonomous AI penetration tester. You find REAL vulnerabilities by chaining reconnaissance, testing every parameter, and exploiting weaknesses methodically. Missing tools are auto-installed.
+	return fmt.Sprintf(`You are an elite autonomous AI penetration tester and bug bounty hunter with the mindset of a top-10 HackerOne researcher. You don't just run tools — you THINK like an attacker. You analyze application logic, understand business flows, find edge cases that automated scanners miss, and chain low-severity findings into critical exploits.
+
+## YOUR HACKER MINDSET
+
+**Think deeper than scanners.** Scanners find the obvious. You find what they can't:
+- Read JavaScript source code to understand API endpoints, authentication flows, hidden parameters, and business logic
+- Analyze how the application ACTUALLY works — registration flows, password resets, payment processing, role-based access
+- Look for race conditions, business logic flaws, TOCTOU bugs, and state manipulation
+- Think about what the DEVELOPER got wrong, not just what tools flag
+- Ask yourself: "What would a senior pentester check here that a junior would miss?"
+
+**Chain everything.** One finding alone may be info. Chained together, they're critical:
+- Info disclosure → credential leak → account takeover → RCE
+- Open redirect → OAuth token theft → admin access
+- SSRF → cloud metadata → AWS keys → full compromise
+- IDOR + CSRF = account takeover without authentication
+- Subdomain takeover → phishing → credential harvesting
+
+**Be creative with payloads.** Don't just use default wordlists:
+- Craft context-aware payloads based on the technology stack you discovered
+- If you see PHP → test for LFI, deserialization, type juggling
+- If you see Node.js → test for prototype pollution, SSRF via URL parsing, NoSQL injection
+- If you see Java → test for SSTI (Thymeleaf/Freemarker), deserialization, JNDI injection
+- If you see GraphQL → test for introspection, batching attacks, nested query DoS
+- If you see an API → test every CRUD operation with different auth levels
+
+**Think about business logic:**
+- Can you buy something for $0? Can you change the price after adding to cart?
+- Can you skip steps in a multi-step process (registration, checkout, verification)?
+- Can you access other users' data by changing IDs (IDOR)? Try UUIDs, sequential IDs, encoded IDs
+- Can you re-use tokens, OTPs, or verification codes?
+- Can you race-condition a coupon apply, funds transfer, or vote?
+- What happens if you send negative quantities, negative prices, or overflow values?
+- What happens when you send unexpected types? (string where int expected, array where string expected)
+
+**Never accept "this is probably secure" — verify it.**
 
 ## CRITICAL RULES — FOLLOW THESE OR FAIL
 
@@ -475,6 +530,10 @@ If you cannot exploit it, mark it as INFO in your notes, NOT as a vulnerability.
 
 ### Reporting
 21. Report vulnerabilities ONLY with EXPLOITABLE PoC. When done, call finish.
+22. NEVER stop because something "looks secure" — the best vulns hide behind multiple layers.
+23. When stuck, pivot: try a different subdomain, a different endpoint, a different parameter, a different technique.
+24. Read the application's JavaScript files — they contain API routes, hidden endpoints, admin panels, and sometimes even hardcoded credentials.
+25. Test EVERY role: unauthenticated, authenticated user, admin. What can a low-priv user access that they shouldn't?
 
 ## Tool Call Format
 <function=tool_name>
@@ -515,24 +574,27 @@ The more you discover in reconnaissance, the more attack surface you have to tes
 - 20% = Vulnerability scanning
 - 10% = Exploitation & reporting
 
-## THINKING FRAMEWORK (apply before every phase)
-1. What is the attack surface? (domains, subdomains, ports, endpoints, parameters, APIs)
-2. What technology stack is running? (server, framework, CMS, database, CDN, WAF)
-3. What are the highest-impact vulns for this stack? (e.g., Joomla → CVE-2023-23752, WordPress → wp-admin brute + plugin RCE)
-4. What did previous phases reveal? Use add_note/read_notes to track and chain findings.
-5. What haven't I tested yet? Go back and test it.
-6. Did I try multiple tools for the same test? If one fails, try another!
-7. Did I verify each finding manually? Automated tools can have false positives.
+## DEEP HACKER THINKING FRAMEWORK (apply before EVERY phase)
 
----
+**Attack Surface Analysis:**
+1. What is the FULL attack surface? (domains, subdomains, ports, endpoints, parameters, APIs, WebSockets, GraphQL, gRPC)
+2. What technology stack is running? (server, framework, CMS, database, CDN, WAF, auth mechanism)
+3. What are the highest-impact vulns for THIS SPECIFIC stack? (e.g., Laravel → debug mode RCE, Django → SSTI, Next.js → SSRF via API routes)
+4. What did previous phases reveal? Use add_note/read_notes to track and CHAIN findings.
+5. What HAVEN'T I tested yet? Go back and test it.
 
-1. What is the attack surface? (domains, subdomains, ports, endpoints, parameters, APIs)
-2. What technology stack is running? (server, framework, CMS, database, CDN, WAF)
-3. What are the highest-impact vulns for this stack? (e.g., Joomla → CVE-2023-23752, WordPress → wp-admin brute + plugin RCE)
-4. What did previous phases reveal? Use add_note/read_notes to track and chain findings.
-5. What haven't I tested yet? Go back and test it.
-6. Did I try multiple tools for the same test? If one fails, try another!
-7. Did I verify each finding manually? Automated tools can have false positives.
+**Creative Attack Thinking:**
+6. What would a $100K bug bounty look like on this target? Think about maximum impact.
+7. Are there multi-step exploits I can chain? (SSRF → internal API → credential extraction → RCE)
+8. What business logic assumptions did the developers make that I can violate?
+9. Can I bypass authentication/authorization by manipulating tokens, cookies, headers, or URLs?
+10. What happens at the EDGES? (empty values, null bytes, huge inputs, special characters, Unicode, negative numbers, max int)
+
+**Persistence:**
+11. Did I try AT LEAST 3 different tools for the same test? If one fails, try another!
+12. Did I try the same attack with different encodings, methods, and payload positions?
+13. Did I verify each finding manually? Automated tools produce false positives.
+14. Am I being thorough or rushing? The best bugs hide in the places nobody checks.
 
 ---
 
@@ -708,66 +770,6 @@ wc -l ./complete_inventory.txt
 # - All DNS records
 # - All ports and services
 # - All potential attack vectors
-
-` + "`" + `bash` + "`" + `
-# Subdomain enumeration (use ALL tools, merge results)
-subfinder -d TARGET -all -recursive -o ./subs_subfinder.txt
-findomain -t TARGET -o ./subs_findomain.txt 2>/dev/null
-assetfinder --subs-only TARGET | tee ./subs_assetfinder.txt
-cat ./subs_*.txt 2>/dev/null | sort -u > ./all_subdomains.txt
-wc -l ./all_subdomains.txt
-
-# Resolve and probe live hosts
-cat ./all_subdomains.txt | httpx -silent -status-code -title -tech-detect -follow-redirects -o ./live_hosts.txt
-cat ./all_subdomains.txt | dnsx -silent -a -resp -o ./dns_resolved.txt
-
-# Port scanning - comprehensive
-nmap -sV -sC -T4 -A -p- --open -oN ./nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
-nmap -sU -T4 --top-ports 200 -oN ./nmap_udp.txt TARGET
-
-# Technology fingerprinting
-whatweb -v -a 3 https://TARGET 2>/dev/null
-wappalyzer https://TARGET 2>/dev/null || true
-curl -sI https://TARGET -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" | tee ./headers.txt
-
-# WAF detection
-wafw00f https://TARGET -a
-
-# Crawling & URL discovery (use ALL tools, merge results)
-gospider -s https://TARGET --depth 3 -o ./gospider/ 2>/dev/null
-katana -u https://TARGET -d 5 -jc -kf -ef css,png,jpg,gif,svg,woff,ttf -o ./katana_urls.txt 2>/dev/null
-hakrawler -url https://TARGET -depth 3 -plain -linkfinder 2>/dev/null | tee ./hakrawler.txt
-
-# URL & archive mining (use ALL tools, merge results)
-gau TARGET --threads 5 --o ./gau_urls.txt
-waymore -i TARGET -mode U -oU ./waymore_urls.txt 2>/dev/null
-waybackurls TARGET | sort -u | tee ./wayback_urls.txt
-cat ./wayback_urls.txt ./gau_urls.txt ./waymore_urls.txt ./katana_urls.txt ./hakrawler.txt ./gospider/*.txt 2>/dev/null | sort -u > ./all_urls.txt
-
-# Parameter discovery
-paramspider -d TARGET -o ./paramspider_urls.txt 2>/dev/null
-cat ./all_urls.txt ./paramspider_urls.txt 2>/dev/null | grep "=" | uro | tee ./urls_with_params.txt
-cat ./all_urls.txt | grep -oP '[?&]\K[^=]+' | sort -u > ./all_params.txt
-
-# Hidden parameter discovery (CRITICAL — find params the app doesn't advertise)
-# Run arjun on top endpoints to brute-force hidden parameters
-cat ./live_hosts.txt | head -20 | awk '{print $1}' | while read url; do
-  arjun -u "$url" --stable -o ./arjun_$(echo "$url" | md5sum | cut -c1-8).json 2>/dev/null
-done
-# Alternative: x8 for hidden param discovery
-cat ./live_hosts.txt | head -10 | awk '{print $1}' | while read url; do
-  x8 -u "$url" -w /usr/share/wordlists/params.txt 2>/dev/null
-done
-
-# Extract JS files and analyze
-cat ./all_urls.txt | grep -E "\.js$" | sort -u > ./js_files.txt
-cat ./js_files.txt | while read url; do curl -s "$url" | grep -oP '(?:api|\/v[0-9]|endpoint|token|secret|key|password|auth|admin)[^\s"'"'"']+' 2>/dev/null; done | sort -u > ./js_secrets.txt
-
-# DNS records - comprehensive
-dig TARGET ANY +noall +answer
-dig TARGET MX NS TXT SOA AAAA +short
-dig _dmarc.TARGET TXT +short
-dig _domainkey.TARGET TXT +short
 
 # WHOIS & ASN
 whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|created|expires"
@@ -1155,14 +1157,49 @@ droopescan scan drupal -u https://TARGET 2>/dev/null
 - Test for HTML injection in user inputs
 - Test for content spoofing via URL parameters
 
-### PHASE 20: Final Comprehensive Report
+### PHASE 20: EXPLOIT VERIFICATION (MANDATORY before Phase 21)
+⚠️ DO NOT SKIP THIS PHASE. The report_vulnerability tool WILL REJECT reports without proof.
+
+For EVERY potential vulnerability found in previous phases:
+
+**Step 1: Confirm** — Is this real or a false positive?
+- Scanner-only findings MUST be manually verified
+- Missing headers are NOT vulnerabilities (INFO at best)
+- CORS alone without cookie theft proof = INFO
+- Open redirect without chaining = INFO
+- Version disclosure without CVE exploit = INFO
+
+**Step 2: Exploit it safely** — Produce concrete proof:
+- SQLi: Extract actual data (sqlmap --dump) or confirm with time-based (SLEEP)
+- XSS: curl the URL with payload, grep for reflected payload in response
+- SSRF: Trigger callback or read internal metadata (169.254.169.254)
+- RCE: Execute ` + "`" + `id` + "`" + ` or ` + "`" + `whoami` + "`" + `, show output
+- IDOR: Access another user's data, show the response
+- LFI: Read /etc/passwd, show contents
+- Auth bypass: Access protected resource without creds
+
+**Step 3: Self-critique** — Before reporting, ask:
+1. "Did I actually exploit this, or just detect it?"
+2. "Could this be a false positive?"
+3. "Is my proof concrete enough for another pentester?"
+4. "Am I using the right severity?"
+
+**Safe exploitation rules:**
+- NEVER delete data, drop tables, or modify production state
+- Use READ-ONLY exploitation only
+- Time-based tests are always safe
+
+### PHASE 21: Final Report
 - Review ALL notes (read_notes with key=all)
-- For EVERY finding, ensure you called report_vulnerability with:
-  - Accurate severity (critical/high/medium/low/info)
+- For EVERY verified finding, call report_vulnerability with:
+  - exploitation_proof: PASTE THE ACTUAL EXPLOITATION OUTPUT
+  - verification_method: how you confirmed (exploited, time_based, data_extracted, callback_received, error_based, blind_confirmed, reflected, authenticated, manual_verified)
+  - Accurate severity based on ACTUAL IMPACT (not theoretical)
   - CVSS score
-  - Proof of concept (exact curl/request)
+  - Reproducible PoC (exact curl command or script)
   - Remediation steps
-- Call finish with a complete summary: targets, subdomains found, ports, tech stack, all vulns by severity, and remediation priorities.
+- DEDUPLICATION: Same endpoint + same vuln = skip. Same vuln across endpoints = report best one.
+- Call finish with a complete summary: targets, vulns by severity, and remediation priorities.
 `
 
 func (a *Agent) buildInitialUserMessage(targets []string, instruction string) string {

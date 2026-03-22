@@ -247,6 +247,8 @@ type Server struct {
 	rateLimiter    *RateLimiter
 	username       string
 	password       string
+	sessions       map[string]bool // valid session tokens
+	sessionMu      sync.RWMutex
 }
 
 // NewServer creates a new web server.
@@ -269,6 +271,7 @@ func NewServer(cfg *config.Config, port int) *Server {
 		rateLimiter:    rl,
 		username:       username,
 		password:       password,
+		sessions:       make(map[string]bool),
 	}
 }
 
@@ -290,11 +293,16 @@ func (s *Server) Start() error {
 				return
 			}
 			
-			// Check for auth cookie
+			// Check for auth cookie against session store
 			cookie, err := r.Cookie("xalgorix_auth")
-			if err == nil && cookie.Value == s.username+":"+s.password {
-				handler.ServeHTTP(w, r)
-				return
+			if err == nil {
+				s.sessionMu.RLock()
+				valid := s.sessions[cookie.Value]
+				s.sessionMu.RUnlock()
+				if valid {
+					handler.ServeHTTP(w, r)
+					return
+				}
 			}
 			
 			// Check Basic Auth header
@@ -1332,23 +1340,47 @@ func (s *Server) handleAgentMailSettings(w http.ResponseWriter, r *http.Request)
 		s.cfg.AgentMailPod = req.Pod
 		s.cfg.AgentMailAPIKey = req.APIKey
 		
-		// Save to env file for persistence
+		// Save to env file — read existing content and update only relevant keys
 		home, _ := os.UserHomeDir()
 		envFile := filepath.Join(home, ".xalgorix.env")
-		envContent := fmt.Sprintf(`# Xalgorix Environment
-AGENTMAIL_POD=%s
-AGENTMAIL_API_KEY=%s
-`, req.Pod, req.APIKey)
 		
-		if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
+		existing, _ := os.ReadFile(envFile)
+		lines := strings.Split(string(existing), "\n")
+		var newLines []string
+		podSet, keySet := false, false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "AGENTMAIL_POD=") {
+				newLines = append(newLines, "AGENTMAIL_POD="+req.Pod)
+				podSet = true
+			} else if strings.HasPrefix(trimmed, "AGENTMAIL_API_KEY=") {
+				newLines = append(newLines, "AGENTMAIL_API_KEY="+req.APIKey)
+				keySet = true
+			} else {
+				newLines = append(newLines, line)
+			}
+		}
+		if !podSet {
+			newLines = append(newLines, "AGENTMAIL_POD="+req.Pod)
+		}
+		if !keySet {
+			newLines = append(newLines, "AGENTMAIL_API_KEY="+req.APIKey)
+		}
+		
+		if err := os.WriteFile(envFile, []byte(strings.Join(newLines, "\n")), 0600); err != nil {
 			log.Printf("Failed to save AgentMail settings: %v", err)
 		}
 		
 		log.Printf("AgentMail settings updated: pod=%s", req.Pod)
 		
+		// Safe masking — handle short API keys
+		maskedKey := "****"
+		if len(req.APIKey) > 8 {
+			maskedKey = "****" + req.APIKey[len(req.APIKey)-8:]
+		}
 		json.NewEncoder(w).Encode(map[string]string{
 			"pod":    req.Pod,
-			"apiKey": "****" + req.APIKey[len(req.APIKey)-8:],
+			"apiKey": maskedKey,
 		})
 		
 	default:
@@ -1387,14 +1419,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	
 	if username == s.username && password == s.password {
-		// Set auth cookie
+		// Generate a random session token instead of storing plaintext creds
+		tokenBytes := make([]byte, 32)
+		cryptorand.Read(tokenBytes)
+		sessionToken := base64.URLEncoding.EncodeToString(tokenBytes)
+		
 		http.SetCookie(w, &http.Cookie{
 			Name:     "xalgorix_auth",
-			Value:    username + ":" + password,
+			Value:    sessionToken,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   86400 * 7, // 7 days
 		})
+		// Store the session token
+		s.sessionMu.Lock()
+		s.sessions[sessionToken] = true
+		s.sessionMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	} else {
@@ -1422,20 +1464,26 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Message == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "message is required"})
 		return
 	}
 
 	// Check if there's an active scan
 	if s.agent == nil {
-		http.Error(w, "no active scan", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no active scan"})
 		return
 	}
 
 	// Send the message to the agent
 	response, err := s.agent.SendMessage(req.Message)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -1571,11 +1619,23 @@ func (s *Server) broadcast(evt WSEvent) {
 		return
 	}
 
+	// Copy client set under lock, then write outside the lock
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	clients := make(map[*websocket.Conn]bool, len(s.clients))
 	for conn := range s.clients {
-		conn.WriteMessage(websocket.TextMessage, data)
+		clients[conn] = true
+	}
+	s.mu.RUnlock()
+
+	for conn := range clients {
+		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("WebSocket write error, removing client: %v", err)
+			s.mu.Lock()
+			delete(s.clients, conn)
+			s.mu.Unlock()
+			conn.Close()
+		}
 	}
 }
 
@@ -1688,18 +1748,39 @@ func (s *Server) serveAssets(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	path = strings.TrimPrefix(path, "/assets/")
 	
+	// Sanitize path to prevent directory traversal
+	path = filepath.Clean(path)
+	if strings.Contains(path, "..") || filepath.IsAbs(path) {
+		http.NotFound(w, r)
+		return
+	}
+	
 	// Read from assets folder
 	home, _ := os.UserHomeDir()
-	assetPath := filepath.Join(home, "xalgorix", "assets", path)
+	assetDir := filepath.Join(home, "xalgorix", "assets")
+	assetPath := filepath.Join(assetDir, path)
+	
+	// Verify the resolved path is still within the asset directory
+	absAssetPath, _ := filepath.Abs(assetPath)
+	absAssetDir, _ := filepath.Abs(assetDir)
+	if !strings.HasPrefix(absAssetPath, absAssetDir+string(os.PathSeparator)) {
+		http.NotFound(w, r)
+		return
+	}
 	
 	// Also check local assets folder
-	localAssetPath := filepath.Join(filepath.Dir(os.Args[0]), "..", "assets", path)
+	localAssetDir := filepath.Join(filepath.Dir(os.Args[0]), "..", "assets")
+	localAssetPath := filepath.Join(localAssetDir, path)
 	
 	var data []byte
 	var err error
 	
-	// Try local path first
-	data, err = os.ReadFile(localAssetPath)
+	// Try local path first (with path validation)
+	absLocalPath, _ := filepath.Abs(localAssetPath)
+	absLocalDir, _ := filepath.Abs(localAssetDir)
+	if strings.HasPrefix(absLocalPath, absLocalDir+string(os.PathSeparator)) {
+		data, err = os.ReadFile(localAssetPath)
+	}
 	if err != nil {
 		// Try xalgorix/assets path
 		data, err = os.ReadFile(assetPath)

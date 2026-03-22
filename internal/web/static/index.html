@@ -18,7 +18,7 @@
         <img src="/static/logo.png" alt="Xalgorix" style="height:40px;margin-right:10px;">
         <div>
           <div class="logo-text">XAL<span>GORIX</span></div>
-          <div class="logo-tag">Most Powerful Open-Source AI Pentesting</div>
+          <div class="logo-tag">Most Powerful Open-Source AI Pentesting Agent</div>
         </div>
       </a>
       
@@ -192,14 +192,13 @@
               </div>
             </div>
             <!-- Chat Input -->
-            <div id="chat-input-container" style="padding: 12px; background: #0a0a0b; border-top: 1px solid #1a1a1c; position: sticky; bottom: 0;">
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <input type="text" id="chat-input" placeholder="Send a message to Xalgorix during scan..." 
-                  style="flex:1; padding: 12px; background: #141416; border: 1px solid #2a2a2e; border-radius: 8px; color: #f0f0f2; font-size: 14px;"
+            <div id="chat-input-container" class="chat-container">
+              <div class="chat-row">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Send a message to Xalgorix during scan..."
                   onkeypress="if(event.key==='Enter')sendChatMessage()">
-                <button onclick="sendChatMessage()" style="padding: 12px 20px; background: #00ff88; border: none; border-radius: 8px; color: #0a0a0b; cursor: pointer; font-weight: 700; font-size: 14px;">Send</button>
+                <button onclick="sendChatMessage()" class="chat-send">Send</button>
               </div>
-              <div style="font-size: 11px; color: #888; margin-top: 6px;">Chat is active during scans</div>
+              <div class="chat-hint">Chat is active during scans</div>
             </div>
           </div>
         </div>

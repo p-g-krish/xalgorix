@@ -3,59 +3,102 @@ package web
 
 // Build autonomous instruction that gives AI freedom to decide approach
 func buildAutonomousInstruction(target string, customInstruction string) string {
-	baseInstruction := `## AUTONOMOUS PENTESTING MODE
+	baseInstruction := `## AUTONOMOUS PENTESTING MODE — EXPLOIT-FIRST METHODOLOGY
 
-You are an expert penetration tester. YOUR GOAL: Find REAL exploitable vulnerabilities.
+You are an elite penetration tester. YOUR GOAL: Find REAL, EXPLOITABLE vulnerabilities with PROOF.
 
 ## YOUR TARGET: ` + target + `
 
-## YOUR RESPONSIBILITY - ORGANIZE YOUR WORK
+## CORE RULE: DETECT → EXPLOIT → REPORT
 
-You are in a working directory. CREATE YOUR OWN directory structure:
-- Create a folder for this target: mkdir -p ./TARGET
-- Work inside that folder: cd ./TARGET
-- Save all results there: ./TARGET/subdomains.txt, ./TARGET/nmap.txt, etc.
+⚠️ NEVER report a vulnerability you haven't exploited. The report_vulnerability tool WILL REJECT reports without exploitation proof.
 
-DO NOT scatter files everywhere. Be organized!
+### Phase 1: RECONNAISSANCE (automated)
+- Subdomain enumeration, port scanning, technology fingerprinting, URL crawling, parameter discovery
+- Save all results in organized folders: mkdir -p ./TARGET
 
-## SEVERITY SCORING - BE HONEST!
+### Phase 2: VULNERABILITY DETECTION (automated + manual)
+- Run nuclei, nikto, sqlmap --crawl, directory brute-forcing
+- Analyze JS files for API keys, endpoints, secrets
+- Test for: SQLi, XSS, SSRF, IDOR, RCE, Auth Bypass, File inclusion, Command injection
 
-**CRITICAL:** RCE with screenshot, full DB dump with data, complete auth bypass
-**HIGH:** SQLi with ACTUAL data extraction screenshot, full account takeover screenshot
-**MEDIUM:** Reflected XSS with screenshot, CSRF with proof
-**INFO:** Findings without clear exploitation path
+### Phase 3: EXPLOITATION & VERIFICATION (MANDATORY before reporting)
+For EVERY potential vulnerability found in Phase 2, you MUST:
 
-## CORS VULNERABILITIES - NUANCED SCORING:
+**SQL Injection:**
+- Confirm with time-based: ` + "`" + `' AND SLEEP(5)--` + "`" + ` (measure response time)
+- Extract data: ` + "`" + `sqlmap -u "URL" --dump --batch --risk=3 --level=5` + "`" + `
+- If data extracted → report as CRITICAL/HIGH with the dumped data as proof
+- If only time-based confirmed → report as HIGH with timing measurements
 
-**CORS + HttpOnly missing + PoC = CRITICAL/HIGH**
-- If you can prove: CORS allows arbitrary origin + cookie lacks HttpOnly + JavaScript can steal it
-- This IS account takeover - report it properly
+**Cross-Site Scripting (XSS):**
+- Inject payload and check if it appears UNENCODED in the response body
+- Use: ` + "`" + `curl -s "URL?param=<script>alert(1)</script>" | grep -i "<script>alert"` + "`" + `
+- Proof = the reflected payload in the HTTP response
+- If reflected → report as MEDIUM with the response showing the payload
 
-**CORS alone (no cookie theft path) = INFO**
-- Simply "CORS allows other origins" without proof of data theft = INFO
+**Server-Side Request Forgery (SSRF):**
+- Test with callback: ` + "`" + `curl "URL?param=http://BURP_COLLABORATOR_OR_WEBHOOK"` + "`" + `
+- Test internal access: ` + "`" + `curl "URL?param=http://169.254.169.254/latest/meta-data/"` + "`" + `
+- Proof = received callback or internal metadata in response
 
-## SQL INJECTION - NUANCED SCORING:
+**Remote Code Execution (RCE):**
+- Execute safe command: ` + "`" + `id` + "`" + `, ` + "`" + `whoami` + "`" + `, ` + "`" + `uname -a` + "`" + `
+- NEVER execute destructive commands (rm, dd, mkfs, etc.)
+- Proof = command output in response
 
-**SQLi with data extraction = CRITICAL/HIGH**
-- You MUST extract actual data: usernames, passwords, emails, etc.
-- Screenshot of query results showing data
+**IDOR / Auth Bypass:**
+- Access another user's resource by changing ID/parameters
+- Compare response with and without authentication
+- Proof = the unauthorized data received
 
-**SQLi without data = MEDIUM**
-- If you can confirm SQLi but can't extract data = MEDIUM
+**File Inclusion (LFI/RFI):**
+- Read: ` + "`" + `/etc/passwd` + "`" + `, ` + "`" + `../../etc/hostname` + "`" + `
+- Proof = file contents in response
 
-## OTHER VULNERABILITIES:
+### Phase 4: REPORT (only after exploitation)
+Call report_vulnerability with:
+- exploitation_proof: PASTE THE ACTUAL OUTPUT (extracted data, reflected payload, timing, callback)
+- verification_method: how you verified (exploited, time_based, data_extracted, etc.)
 
-**phpMyAdmin with auth = INFO** (not exploitable without creds bypass)
-**Open redirect alone = INFO** (needs chaining to be useful)
-**Debug mode without exploitation = INFO**
-**Missing headers alone = INFO**
+## FALSE POSITIVE REJECTION LIST — DO NOT REPORT THESE AS VULNERABILITIES:
 
-## UNIQUE FINDINGS ONLY - NO DUPLICATES!
+| Finding | Severity | Why |
+|---------|----------|-----|
+| Missing security headers (CSP, X-Frame, HSTS) | INFO only | Not exploitable alone |
+| Server version disclosure | INFO only | Unless you exploit a specific CVE |
+| CORS misconfiguration (no cookie theft) | INFO only | Need proof of data theft via JS |
+| Open redirect (no chaining) | INFO only | Need OAuth/SSRF chain |
+| Self-XSS (only works on own session) | INFO only | Not exploitable against others |
+| phpMyAdmin/admin panel found (with auth) | INFO only | Unless you bypass auth |
+| Default credentials (if not tested) | INFO only | Must actually login |
+| SSL/TLS issues (weak ciphers, old TLS) | INFO only | Not directly exploitable |
+| Nuclei template match (no manual verify) | REJECT | Must manually verify |
+| Directory listing (no sensitive files) | INFO only | Unless sensitive data found |
 
-BEFORE reporting a vulnerability, CHECK if you already reported a similar one:
-- Same endpoint + same vulnerability = DUPLICATE (skip)
-- Different endpoint = NEW (keep)
-- Same type different parameter = depends
+## SELF-CRITIQUE BEFORE REPORTING
+
+Before calling report_vulnerability, ask yourself:
+1. "Did I actually exploit this, or just detect it?"
+2. "Could this be a false positive? What would make it one?"
+3. "Is my proof concrete — would another pentester accept this?"
+4. "Am I reporting the right severity, or inflating it?"
+
+If the answer to #1 is "just detected" → GO EXPLOIT IT FIRST.
+
+## DEDUPLICATION
+
+- Same endpoint + same vulnerability type = DUPLICATE, skip it
+- Same vulnerability across many endpoints = Report the BEST ONE, mention "also affects N other endpoints"
+- Different parameters on same endpoint = Report once with all affected parameters listed
+
+## SAFE EXPLOITATION RULES
+
+- NEVER delete data, drop tables, or modify production state
+- Use READ-ONLY exploitation: SELECT queries, file reads, metadata access
+- Time-based tests are safe (SLEEP, pg_sleep, WAITFOR DELAY)
+- Always prefer passive confirmation over active exploitation
+- If you're unsure whether an exploit is safe, use time-based or error-based confirmation
 
 ## AGENTMAIL FOR SIGN-UP TESTING
 When testing registration/login:
@@ -68,29 +111,51 @@ Be organized. One target fully tested, then next.
 `
 
 	if customInstruction != "" {
-		return baseInstruction + "\n\n" + customInstruction
+		return baseInstruction + "\n\n## CUSTOM INSTRUCTIONS\n" + customInstruction
 	}
 	return baseInstruction
 }
 
 // Build autonomous DAST instruction for URL scanning
 func buildDASTInstruction(target string) string {
-	return `## AUTONOMOUS DAST MODE
+	return `## AUTONOMOUS DAST MODE — EXPLOIT-FIRST
 
 YOUR TARGET: ` + target + `
 
 ## ORGANIZE YOUR WORK
 Create folder: mkdir -p ./TARGET && cd ./TARGET
 
-## SEVERITY:
-CRITICAL/HIGH: RCE, SQLi with data extraction, session hijacking with PoC
-MEDIUM: XSS, CSRF, SQLi without data
-INFO: CORS alone (no theft), headers alone, debug without exploit
+## CORE RULE: DETECT → EXPLOIT → REPORT
+⚠️ The report_vulnerability tool REJECTS reports without exploitation proof.
 
-## UNIQUE FINDINGS ONLY!
-Same endpoint + same vulnerability = DUPLICATE (skip)
+## EXPLOITATION REQUIRED FOR EACH FINDING:
 
-## TESTING:
-SQLi, XSS, IDOR, SSRF with ACTUAL exploitation proof.
+**SQLi:** Extract actual data with sqlmap --dump, OR confirm with time-based (SLEEP)
+**XSS:** Show reflected payload in response body (curl + grep)
+**SSRF:** Get callback or read internal metadata
+**RCE:** Execute id/whoami and show output
+**IDOR:** Access other user's data and show it
+**Auth Bypass:** Access protected endpoint without credentials
+
+## SEVERITY RULES:
+CRITICAL/HIGH: Full exploitation with data extraction, account takeover with PoC
+MEDIUM: Confirmed exploitation with limited impact (reflected XSS, CSRF with PoC)
+INFO: Detection without exploitation proof, missing headers, version disclosure
+
+## FALSE POSITIVE REJECTION:
+- Missing headers = INFO, not a vulnerability
+- CORS alone (no cookie theft PoC) = INFO
+- Open redirect alone = INFO
+- Scanner output without manual verification = REJECTED
+
+## DEDUPLICATION:
+Same endpoint + same vulnerability = skip (already reported)
+
+## BEFORE REPORTING, ASK YOURSELF:
+1. Did I ACTUALLY exploit this?
+2. Is my proof concrete — extracted data, reflected payload, or timing?
+3. Could this be a WAF/honeypot false positive?
+
+If you can't exploit it, report as INFO or don't report at all.
 `
 }

@@ -116,16 +116,16 @@
         
         switch(status) {
             case 'connected':
-                indicator.style.background = 'var(--success)';
-                indicator.style.boxShadow = '0 0 6px var(--success)';
+                indicator.style.background = '#22C55E';
+                indicator.style.boxShadow = '0 0 6px #22C55E';
                 break;
             case 'disconnected':
-                indicator.style.background = 'var(--warning)';
-                indicator.style.boxShadow = '0 0 6px var(--warning)';
+                indicator.style.background = '#F59E0B';
+                indicator.style.boxShadow = '0 0 6px #F59E0B';
                 break;
             case 'error':
-                indicator.style.background = 'var(--danger)';
-                indicator.style.boxShadow = '0 0 6px var(--danger)';
+                indicator.style.background = '#EF4444';
+                indicator.style.boxShadow = '0 0 6px #EF4444';
                 break;
         }
     }
@@ -578,11 +578,12 @@
         const feedBody = document.getElementById('feed-body');
         const userMsg = document.createElement('div');
         userMsg.className = 'event event-message';
-        userMsg.style.background = 'var(--bg-tertiary)';
+        userMsg.style.background = 'rgba(30, 41, 59, 0.5)';
         userMsg.style.padding = '10px';
         userMsg.style.margin = '5px 0';
-        userMsg.style.borderRadius = '6px';
-        userMsg.innerHTML = '<strong style="color: var(--primary)">You:</strong> ' + esc(message);
+        userMsg.style.borderRadius = '8px';
+        userMsg.style.borderLeft = '3px solid #2DD4BF';
+        userMsg.innerHTML = '<strong style="color: #2DD4BF">You:</strong> ' + esc(message);
         feedBody.appendChild(userMsg);
         scrollToBottom();
         
@@ -600,7 +601,8 @@
             botMsg.className = 'event event-message';
             botMsg.style.padding = '10px';
             botMsg.style.margin = '5px 0';
-            botMsg.innerHTML = '<strong style="color: var(--primary)">Xalgorix:</strong> ' + mdToHtml(data.response);
+            botMsg.style.borderLeft = '3px solid #F43F5E';
+            botMsg.innerHTML = '<strong style="color: #F43F5E">Xalgorix:</strong> ' + mdToHtml(data.response);
             feedBody.appendChild(botMsg);
             scrollToBottom();
         } catch (e) {
@@ -682,12 +684,12 @@
 
     // ── Actions ────────────────────────────────────────────
     window.startScan = function () {
-        const targetInput = document.getElementById('target-input').value.trim();
-        if (!targetInput) {
-            targetInput = document.getElementById('target-input');
-            targetInput.focus();
-            targetInput.style.borderColor = '#ff4757';
-            setTimeout(() => targetInput.style.borderColor = '', 2000);
+        const targetVal = document.getElementById('target-input').value.trim();
+        if (!targetVal) {
+            const targetEl = document.getElementById('target-input');
+            targetEl.focus();
+            targetEl.style.borderColor = '#F43F5E';
+            setTimeout(() => targetEl.style.borderColor = '', 2000);
             return;
         }
 
@@ -707,7 +709,7 @@
         if (loadedTargets.length > 0) {
             targets = loadedTargets;
         } else {
-            targets = targetInput.split(',').map(t => t.trim()).filter(Boolean);
+            targets = targetVal.split(',').map(t => t.trim()).filter(Boolean);
         }
 
         // Reset state

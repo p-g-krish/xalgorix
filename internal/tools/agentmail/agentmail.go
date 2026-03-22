@@ -17,9 +17,7 @@ const baseURL = "https://api.agentmail.to/v0"
 
 // AgentMail client
 type AgentMail struct {
-	apiKey string
-	pod    string
-	http   *http.Client
+	http *http.Client
 }
 
 // Message represents an email message
@@ -61,24 +59,23 @@ type Thread struct {
 	UpdatedAt string    `json:"updated_at"`
 }
 
-// New creates a new AgentMail client
+// New creates a new AgentMail client that reads config dynamically
 func New() *AgentMail {
-	cfg := config.Get()
 	return &AgentMail{
-		apiKey: cfg.AgentMailAPIKey,
-		pod:    cfg.AgentMailPod,
-		http:   &http.Client{Timeout: 30 * time.Second},
+		http: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 // buildAuth builds the authorization header with pod prefix
 func (a *AgentMail) buildAuth() string {
-	return fmt.Sprintf("ApiKey %s_%s", a.pod, a.apiKey)
+	cfg := config.Get()
+	return fmt.Sprintf("ApiKey %s_%s", cfg.AgentMailPod, cfg.AgentMailAPIKey)
 }
 
 // isConfigured checks if AgentMail is properly configured
 func (a *AgentMail) isConfigured() bool {
-	return a.apiKey != "" && a.pod != ""
+	cfg := config.Get()
+	return cfg.AgentMailAPIKey != "" && cfg.AgentMailPod != ""
 }
 
 // ListInboxes lists all inboxes
@@ -121,8 +118,8 @@ func (a *AgentMail) CreateInbox(name string) (*Inbox, error) {
 		return nil, fmt.Errorf("AgentMail not configured: set AGENTMAIL_API_KEY and AGENTMAIL_POD environment variables")
 	}
 
-	body := fmt.Sprintf(`{"name":"%s"}`, name)
-	req, err := http.NewRequest("POST", baseURL+"/inboxes", strings.NewReader(body))
+	payload, _ := json.Marshal(map[string]string{"name": name})
+	req, err := http.NewRequest("POST", baseURL+"/inboxes", strings.NewReader(string(payload)))
 	if err != nil {
 		return nil, err
 	}
@@ -275,13 +272,13 @@ func (a *AgentMail) SendEmail(inboxID, to, subject, body string) error {
 		return fmt.Errorf("AgentMail not configured")
 	}
 
-	jsonBody := fmt.Sprintf(`{
-		"to":"%s",
-		"subject":"%s",
-		"body":"%s"
-	}`, to, subject, body)
+	payload, _ := json.Marshal(map[string]string{
+		"to":      to,
+		"subject": subject,
+		"body":    body,
+	})
 
-	req, err := http.NewRequest("POST", baseURL+"/inboxes/"+inboxID+"/messages/send", strings.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", baseURL+"/inboxes/"+inboxID+"/messages/send", strings.NewReader(string(payload)))
 	if err != nil {
 		return err
 	}
