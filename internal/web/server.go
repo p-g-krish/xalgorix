@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.3.0"
+const version = "3.4.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -656,15 +656,13 @@ func (s *Server) runMultiScan(req ScanRequest) {
 
 ## YOUR TASK: Find ALL subdomains of TARGET
 
-## ORGANIZE YOUR WORK:
-- First: CREATE A FOLDER for this target
-  mkdir -p ./TARGET_ENUM && cd ./TARGET_ENUM
-- Save all subdomain results inside this folder
-- Example: subfinder output goes to ./TARGET_ENUM/passive_subdomains.txt
+## IMPORTANT: SAVE ALL FILES IN THE CURRENT DIRECTORY
+⚠️ DO NOT create subdirectories. Save all output files directly in the current working directory.
+⚠️ The system reads files from THIS directory to find your subdomains.
 
 ## SUBDOMAIN ENUMERATION COMMANDS - RUN ALL:
 
-# 1. subfinder (passive - this is the default mode)
+# 1. subfinder (passive)
 subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
 subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
 
@@ -684,17 +682,18 @@ curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null
 # 6. Wayback Machine
 curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
 
-# 7. Active enumeration (subfinder with wordlist)
+# 7. Active enumeration
 subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
-subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
 
 # 8. MERGE ALL RESULTS
 cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_subdomains.txt
+echo "Total unique subdomains found:"
 wc -l ./all_subdomains.txt
 
 # 9. RESOLVE TO FIND LIVE HOSTS
 cat ./all_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
 cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
+echo "Live subdomains:"
 wc -l ./live_subdomains.txt
 
 ## IMPORTANT:
@@ -708,9 +707,6 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 			if req.Instruction != "" {
 				discoveryInstruction += "\n\n" + req.Instruction
 			}
-
-			// Replace TARGET placeholder with actual target
-			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)
 
 			s.broadcast(WSEvent{
 				Type:         "target_started",
@@ -761,25 +757,44 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				}
 			}
 
-			// Also try reading from parent directory as fallback
+			// Also try reading from subdirectories (agent may have created them)
 			if len(subdomains) == 0 {
-				parentFiles := []string{
-					filepath.Join(filepath.Dir(s.currentScanDir), "live_subdomains.txt"),
-					filepath.Join(filepath.Dir(s.currentScanDir), "live_resolved.txt"),
-				}
-				for _, f := range parentFiles {
-					if data, err := os.ReadFile(f); err == nil {
-						for _, line := range strings.Split(string(data), "\n") {
-							line = strings.TrimSpace(line)
-							if line != "" && !strings.HasPrefix(line, "#") {
+				subdomainFileNames := []string{"live_subdomains.txt", "live_resolved.txt", "all_subdomains.txt", "all_discovered_subdomains.txt"}
+				filepath.WalkDir(s.currentScanDir, func(path string, d fs.DirEntry, err error) error {
+					if err != nil || d.IsDir() || len(subdomains) > 0 {
+						return nil
+					}
+					base := filepath.Base(path)
+					for _, name := range subdomainFileNames {
+						if base == name {
+							log.Printf("[DEBUG] Found subdomain file in subdir: %s", path)
+							data, readErr := os.ReadFile(path)
+							if readErr != nil {
+								return nil
+							}
+							for _, line := range strings.Split(string(data), "\n") {
+								line = strings.TrimSpace(line)
+								if line == "" || strings.HasPrefix(line, "#") {
+									continue
+								}
+								line = strings.TrimPrefix(line, "http://")
+								line = strings.TrimPrefix(line, "https://")
 								parts := strings.Fields(line)
-								if len(parts) > 0 {
+								if len(parts) > 0 && strings.Contains(parts[0], ".") {
 									subdomains = append(subdomains, parts[0])
 								}
 							}
+							log.Printf("[DEBUG] Found %d subdomains in subdir file %s", len(subdomains), path)
+							return nil
 						}
 					}
-				}
+					return nil
+				})
+			}
+
+			// Last resort: try reading from agent notes
+			if len(subdomains) == 0 {
+				log.Printf("[WARN] No subdomain files found in %s or subdirectories. Agent may not have saved results to files.", s.currentScanDir)
 			}
 
 			s.broadcast(WSEvent{

@@ -182,6 +182,7 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
+	minIterationsBeforeFinish := 15 // Must do at least 15 iterations before finish is accepted
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		// Reset activity watchdog on each iteration
 		a.lastActivity = time.Now()
@@ -278,6 +279,26 @@ Call a tool NOW in your next response.`
 			})
 
 			if tc.Name == "finish" || (result.Metadata != nil && result.Metadata["finished"] == true) {
+				// Guard: reject premature finish calls
+				if iter < minIterationsBeforeFinish {
+					rejectMsg := fmt.Sprintf(`⚠️ FINISH REJECTED — You are only on iteration %d/%d minimum.
+
+You have NOT completed a thorough assessment. You MUST continue testing:
+- Did you run port scanning (nmap)? 
+- Did you run directory brute-forcing (ffuf/dirsearch)?
+- Did you test for SQLi, XSS, SSRF, IDOR on discovered endpoints?
+- Did you analyze JavaScript files for hidden APIs?
+- Did you test authentication and authorization?
+- Did you check for known CVEs in discovered technologies?
+
+DO NOT call finish again until you have thoroughly tested the target.
+Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish)
+					a.emit(Event{Type: "tool_result", ToolName: "finish", ToolResult: tools.Result{Output: rejectMsg}, TotalTokens: tokenCount()})
+					a.msgMu.Lock()
+					a.messages = append(a.messages, llm.Message{Role: "user", Content: rejectMsg})
+					a.msgMu.Unlock()
+					continue
+				}
 				a.emit(Event{Type: "finished", Content: result.Output, TotalTokens: tokenCount()})
 				return
 			}
@@ -568,11 +589,15 @@ const defaultChecklist = `
 ⚠️ BE THOROUGH - Missing one vuln could be the difference between safe and compromised
 
 ## TIME ALLOCATION - CRITICAL!
-**SPEND 70% OF TIME ON RECON PHASE!**
-The more you discover in reconnaissance, the more attack surface you have to test!
-- 70% = Recon (find everything!)
-- 20% = Vulnerability scanning
-- 10% = Exploitation & reporting
+**DO NOT RUSH. DO NOT FINISH EARLY. THOROUGHNESS WINS.**
+- 40% = Recon (subdomain enum, port scan, tech fingerprint, URL crawl, JS analysis)
+- 40% = Vulnerability scanning & testing (SQLi, XSS, SSRF, IDOR, auth bypass, LFI — on EVERY endpoint)
+- 20% = Exploitation, verification & reporting
+
+⚠️ The finish tool will be REJECTED if you haven't completed enough phases.
+⚠️ DO NOT call finish after just reconnaissance — you MUST test for vulnerabilities.
+⚠️ A scan that only does subdomain enumeration and header checks is WORTHLESS.
+⚠️ You are NOT done until you have: scanned ports, fuzzed directories, tested parameters for injection, and verified any findings.
 
 ## DEEP HACKER THINKING FRAMEWORK (apply before EVERY phase)
 
