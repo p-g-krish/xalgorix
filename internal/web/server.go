@@ -30,7 +30,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "2.0.0"
+const version = "2.1.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -644,48 +644,55 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			// PHASE 1: First do comprehensive subdomain enumeration
-			discoveryInstruction := `# IMPORTANT: You are in the correct scan directory.
-# Create it if needed:
-mkdir -p ./ && echo "Starting subdomain enumeration in $(pwd)"
+			discoveryInstruction := `# PHASE 1: SUBDOMAIN ENUMERATION
 
-# Subdomain enumeration commands - run ALL of these:
+## YOUR TASK: Find ALL subdomains of TARGET
 
-# 1. Passive enumeration (subfinder is passive by default)
+## ORGANIZE YOUR WORK:
+- First: CREATE A FOLDER for this target
+  mkdir -p ./TARGET_ENUM && cd ./TARGET_ENUM
+- Save all subdomain results inside this folder
+- Example: subfinder output goes to ./TARGET_ENUM/passive_subdomains.txt
+
+## SUBDOMAIN ENUMERATION COMMANDS - RUN ALL:
+
+# 1. subfinder (passive - this is the default mode)
 subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
 subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
 
-# 2. Certificate Transparency
+# 2. Certificate Transparency (curl)
 curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
 
-# 3. Findomain
+# 3. findomain
 findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
 
-# 4. Assetfinder
+# 4. assetfinder
 assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt 2>/dev/null || true
 
-# 5. DNS Buffer Over
+# 5. DNS Bufferover
 curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
 curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
 
 # 6. Wayback Machine
 curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
 
-# 7. Active enumeration
+# 7. Active enumeration (subfinder with wordlist)
 subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
 subfinder -d TARGET -w /usr/share/wordlists/subdomains.txt -t 100 -o ./active_bruteforce.txt 2>/dev/null || true
 
-# 8. Merge ALL subdomains
-cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_discovered_subdomains.txt
-wc -l ./all_discovered_subdomains.txt
+# 8. MERGE ALL RESULTS
+cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_subdomains.txt
+wc -l ./all_subdomains.txt
 
-# 9. Resolve to find live hosts
-cat ./all_discovered_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
+# 9. RESOLVE TO FIND LIVE HOSTS
+cat ./all_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
 cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
 wc -l ./live_subdomains.txt
 
-# IMPORTANT: After completing, you MUST call add_note with the full list of discovered subdomains from ./live_subdomains.txt
+## IMPORTANT:
+After running ALL commands, call add_note with the complete list of live subdomains from ./live_subdomains.txt
 
-STOP HERE. Do NOT proceed to vulnerability scanning. The system will queue each subdomain for individual scanning.`
+STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain for individual scanning.`
 
 			// Replace TARGET placeholder with actual target
 			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)

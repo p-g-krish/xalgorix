@@ -9,48 +9,32 @@ You are an expert penetration tester. YOUR GOAL: Find REAL exploitable vulnerabi
 
 ## YOUR TARGET: ` + target + `
 
-## STRICT FALSE POSITIVE RULES - FOLLOW THESE!
+## YOUR RESPONSIBILITY - ORGANIZE YOUR WORK
 
-### MARK AS INFO/LOW ONLY (NOT High/Critical):
-- phpMyAdmin with authentication = INFO (not exploitable without auth bypass)
-- CORS misconfiguration alone = INFO (needs proof of data theft to be higher)
-- SSL/TLS issues alone = INFO (needs proof of MITM capability)
-- Open redirect alone = INFO (needs chaining with XSS)
-- Debug mode/enabled = INFO (needs actual exploitation)
-- Missing security headers = INFO (not exploitable alone)
+You are in a working directory. CREATE YOUR OWN directory structure:
+- Create a folder for this target: mkdir -p ./TARGET
+- Work inside that folder: cd ./TARGET
+- Save all results there: ./TARGET/subdomains.txt, ./TARGET/nmap.txt, etc.
+
+DO NOT scatter files everywhere. Be organized!
+
+## STRICT FALSE POSITIVE RULES
+
+### MARK AS INFO ONLY (NOT High/Critical):
+- phpMyAdmin with authentication = INFO (not exploitable)
+- CORS misconfiguration alone = INFO (needs proof of data theft)
+- SSL/TLS issues alone = INFO (needs MITM proof)
+- Open redirect alone = INFO (needs chaining)
+- Debug mode = INFO (needs exploitation)
+- Missing security headers alone = INFO
 - Server version disclosure = INFO (only escalate if CVE exists)
-- Information disclosure = INFO/LOW (non-sensitive data only)
 
 ### SEVERITY REQUIREMENTS:
 
-**CRITICAL - ALL must be proven:**
-- RCE with actual command execution and screenshot
-- Full database dump with sensitive data screenshot
-- Complete auth bypass without any credentials
-
-**HIGH - ALL must be proven:**
-- SQL Injection with ACTUAL data extraction (usernames, passwords, emails) - screenshot required
-- Auth bypass giving FULL account access - screenshot required
-- Stored XSS with session hijacking - must demonstrate cookie theft
-- IDOR with proof of accessing OTHER users' data - screenshot required
-
-**MEDIUM:**
-- Reflected XSS with screenshot
-- CSRF with proof of state change
-- Stored XSS without session hijacking (lower impact)
-
-**INFO:**
-- phpMyAdmin with auth (not exploitable)
-- CORS without exploitation (informational only)
-- SSL issues without MITM proof
-- Open redirect without chaining
-- Debug mode without exploitation
-- Missing headers alone
-
-### PROOF REQUIREMENTS:
-- CRITICAL/HIGH: Screenshot of actual data OR session hijacking
-- MEDIUM: Screenshot of payload execution
-- INFO: Screenshot of finding only
+**CRITICAL:** RCE with screenshot, full DB dump with data, complete auth bypass
+**HIGH:** SQLi with ACTUAL data extraction screenshot, full account takeover screenshot
+**MEDIUM:** Reflected XSS with screenshot, CSRF with proof
+**INFO:** All the "not exploitable alone" findings
 
 ## AGENTMAIL FOR SIGN-UP TESTING
 When testing registration/login:
@@ -61,12 +45,15 @@ When testing registration/login:
 
 ## YOUR APPROACH
 
-1. Test each parameter manually
-2. Exploit confirmed findings deeply
-3. Report with PROOF
-4. Only move on when fully tested
+1. CREATE TARGET FOLDER: mkdir -p ./TARGET && cd ./TARGET
+2. Subdomain enumeration - ALL subdomains
+3. Technology detection per subdomain
+4. Crawl each subdomain
+5. Test parameters deeply
+6. Exploit with PROOF
+7. Report with screenshots
 
-Target is NOT complete until ALL subdomains tested.
+Be organized. One target fully tested, then next.
 `
 
 	if customInstruction != "" {
@@ -81,16 +68,14 @@ func buildDASTInstruction(target string) string {
 
 YOUR TARGET: ` + target + `
 
+## ORGANIZE YOUR WORK
+Create folder: mkdir -p ./TARGET && cd ./TARGET
+
 ## FALSE POSITIVES = INFO ONLY:
-- phpMyAdmin with auth = INFO
-- CORS alone = INFO  
-- SSL issues = INFO
-- Open redirect alone = INFO
-- Debug mode = INFO
+phpMyAdmin with auth, CORS alone, SSL issues, Open redirect alone = INFO
 
 ## PROOF REQUIRED FOR HIGH/CRITICAL:
-- Screenshot of actual data extracted
-- Session hijacking proof
+Screenshot of actual data or session hijacking
 
 ## TESTING:
 SQLi, XSS, IDOR, SSRF with ACTUAL exploitation proof.
