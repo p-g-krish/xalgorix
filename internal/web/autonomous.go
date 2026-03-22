@@ -53,6 +53,32 @@ When testing registration/login:
 6. Exploit with PROOF
 7. Report with screenshots
 
+## UNIQUE FINDINGS ONLY - NO DUPLICATES!
+
+BEFORE reporting a vulnerability, CHECK if you already reported a similar one.
+
+### Duplicate Detection Rules:
+- **Same endpoint + same vulnerability type = DUPLICATE** (don't report again)
+- **Same parameter + same issue = DUPLICATE**
+- **Similar but different endpoint = KEEP if NEW**
+- **Same finding on different host = KEEP (separate report)**
+
+### Examples:
+❌ WRONG (duplicate): 
+- "SQL Injection in /search" reported twice
+- "XSS in contact form" reported 3 times
+
+✅ CORRECT (unique):
+- "SQL Injection in /search" = 1 report
+- "SQL Injection in /login" = NEW report (different endpoint)
+- "XSS in /contact" = 1 report
+- "XSS in /comment" = NEW report (different parameter/endpoint)
+
+### Before Each add_note Call:
+Ask yourself: "Have I already reported this exact finding?"
+- If YES → Skip it, don't add again
+- If NO (new endpoint, new parameter, new type) → Add it
+
 Be organized. One target fully tested, then next.
 `
 
@@ -76,6 +102,9 @@ phpMyAdmin with auth, CORS alone, SSL issues, Open redirect alone = INFO
 
 ## PROOF REQUIRED FOR HIGH/CRITICAL:
 Screenshot of actual data or session hijacking
+
+## UNIQUE FINDINGS ONLY!
+Same endpoint + same vulnerability = DUPLICATE (don't report again)
 
 ## TESTING:
 SQLi, XSS, IDOR, SSRF with ACTUAL exploitation proof.
