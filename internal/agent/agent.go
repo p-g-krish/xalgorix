@@ -55,6 +55,7 @@ type Agent struct {
 	stopped  bool
 	ctx      context.Context
 	cancel   context.CancelFunc
+	lastActivity time.Time
 }
 
 // NewAgent creates a new agent.
@@ -85,6 +86,7 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 		events:   events,
 		maxIter:  cfg.MaxIterations,
 		ctx:      context.Background(),
+		lastActivity: time.Now(),
 	}
 
 	// Create cancellable context
@@ -121,8 +123,47 @@ func stripThink(s string) string {
 	return thinkRegex.ReplaceAllString(s, "")
 }
 
+// startWatchdog starts a background watchdog that monitors for stuck agents.
+// Returns a stop function to call when the agent finishes.
+func (a *Agent) startWatchdog() func() {
+	stopChan := make(chan struct{})
+	
+	go func() {
+		// Check every 2 minutes
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-ticker.C:
+				since := time.Since(a.lastActivity)
+				// If no activity for 10 minutes, emit warning
+				if since > 10*time.Minute {
+					a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ Watchdog: No activity for %v. Still working...", since.Round(time.Minute))})
+				}
+				// If no activity for 30 minutes, force stop
+				if since > 30*time.Minute {
+					a.emit(Event{Type: "error", Content: "⚠️ Watchdog: Agent stuck for 30 minutes. Force stopping."})
+					a.cancel()
+					return
+				}
+			}
+		}
+	}()
+	
+	return func() {
+		close(stopChan)
+	}
+}
+
 // Run starts the agent loop with the given targets and instructions.
 func (a *Agent) Run(targets []string, instruction string) {
+	// Start watchdog
+	stopWatchdog := a.startWatchdog()
+	defer stopWatchdog()
+	
 	systemPrompt := a.buildSystemPrompt(targets, instruction)
 	a.messages = []llm.Message{
 		{Role: "system", Content: systemPrompt},
@@ -140,6 +181,9 @@ func (a *Agent) Run(targets []string, instruction string) {
 	}
 
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
+		// Reset activity watchdog on each iteration
+		a.lastActivity = time.Now()
+		
 		if a.maxIter > 0 {
 			a.emit(Event{Type: "thinking", Content: fmt.Sprintf("Iteration %d/%d", iter+1, a.maxIter), TotalTokens: tokenCount()})
 		} else {
