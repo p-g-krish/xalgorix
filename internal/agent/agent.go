@@ -93,6 +93,8 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 
 	// Create cancellable context
 	a.ctx, a.cancel = context.WithCancel(a.ctx)
+	// Wire context to LLM client so cancel interrupts pending HTTP requests
+	a.client.SetContext(a.ctx)
 
 	agentsgraph.Register(reg, func(subName string, targets []string, task string) (string, error) {
 		subEvents := make(chan Event, 256)
@@ -147,8 +149,15 @@ func (a *Agent) startWatchdog() func() {
 				}
 				// If no activity for 30 minutes, force stop
 				if since > 60*time.Minute {
-					a.emit(Event{Type: "error", Content: "⚠️ Watchdog: Agent stuck for 30 minutes. Force stopping."})
-					a.cancel()
+					a.emit(Event{Type: "error", Content: fmt.Sprintf("⚠️ Watchdog: Agent stuck for %v. Force stopping.", since.Round(time.Minute))})
+					// Set stopped flag — this is checked at the TOP of the agent loop
+					a.stopped.Store(true)
+					// Cancel context to interrupt any blocking HTTP calls
+					if a.cancel != nil {
+						a.cancel()
+					}
+					// Kill all running terminal processes to unblock the agent
+					terminal.KillAllProcesses()
 					return
 				}
 			}

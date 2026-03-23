@@ -4,6 +4,7 @@ package llm
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +37,7 @@ type Client struct {
 	mu         sync.Mutex
 	totalIn    int
 	totalOut   int
+	ctx        context.Context // agent context for cancellation
 }
 
 // TokenUsage holds cumulative token counts.
@@ -59,7 +61,13 @@ func NewClient(cfg *config.Config) *Client {
 		cfg:        cfg,
 		httpClient: &http.Client{Timeout: 5 * time.Minute},
 		apiModel:   apiModel,
+		ctx:        context.Background(), // default context, overridden by SetContext
 	}
+}
+
+// SetContext sets the context for HTTP requests, enabling cancellation.
+func (c *Client) SetContext(ctx context.Context) {
+	c.ctx = ctx
 }
 
 // chatRequest is the OpenAI-compatible chat completion request.
@@ -263,7 +271,12 @@ func (c *Client) doChat(messages []Message) (string, error) {
 	}
 
 	body, _ := json.Marshal(reqBody)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	// Use agent context so cancel/stop can interrupt this request
+	reqCtx := c.ctx
+	if reqCtx == nil {
+		reqCtx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
