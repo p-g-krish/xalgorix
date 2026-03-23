@@ -183,6 +183,8 @@ func (a *Agent) Run(targets []string, instruction string) {
 	}
 
 	minIterationsBeforeFinish := 15 // Must do at least 15 iterations before finish is accepted
+	consecutiveErrors := 0
+	emptyResponseCount := 0
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		// Reset activity watchdog on each iteration
 		a.lastActivity = time.Now()
@@ -195,14 +197,32 @@ func (a *Agent) Run(targets []string, instruction string) {
 
 		response, err := a.client.Chat(a.messages)
 		if err != nil {
-			a.emit(Event{Type: "error", Content: err.Error(), TotalTokens: tokenCount()})
-			time.Sleep(5 * time.Second)
+			consecutiveErrors++
+			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/5): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
+			if consecutiveErrors >= 5 {
+				a.emit(Event{Type: "finished", Content: fmt.Sprintf("Agent stopped: LLM failed %d consecutive times. Last error: %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
+				return
+			}
+			// Exponential backoff: 5s, 10s, 15s, 20s, 25s
+			time.Sleep(time.Duration(consecutiveErrors*5) * time.Second)
 			continue
 		}
+		consecutiveErrors = 0 // Reset on success
 
 		if response == "" {
+			emptyResponseCount++
+			a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ LLM returned empty response (%d/3)", emptyResponseCount), TotalTokens: tokenCount()})
+			if emptyResponseCount >= 3 {
+				// Inject a strong nudge to get the agent back on track
+				nudge := "Your last responses were empty. You MUST call a tool NOW. Use terminal_execute to run your next command, or call finish if you are truly done."
+				a.msgMu.Lock()
+				a.messages = append(a.messages, llm.Message{Role: "user", Content: nudge})
+				a.msgMu.Unlock()
+				emptyResponseCount = 0
+			}
 			continue
 		}
+		emptyResponseCount = 0 // Reset on non-empty
 
 		// Strip <think>...</think> blocks for parsing (keep in raw for context)
 		responseClean := stripThink(response)

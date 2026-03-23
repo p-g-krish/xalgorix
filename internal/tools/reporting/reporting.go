@@ -124,12 +124,27 @@ If you cannot exploit it, downgrade severity to 'info' and report as information
 		return tools.Result{Output: rejection}, nil
 	}
 
-	// ── Gate 4: Deduplication ──
+	// ── Gate 4: Smart Deduplication — same vuln type on same endpoint = duplicate ──
 	endpoint := strings.TrimSpace(args["endpoint"])
+	vulnType := extractVulnType(title, args["description"])
+	normalizedEndpoint := normalizeEndpoint(endpoint)
+	
 	for _, existing := range vulnerabilities {
+		existingType := extractVulnType(existing.Title, existing.Description)
+		existingNormEndpoint := normalizeEndpoint(existing.Endpoint)
+		
+		// Check 1: Exact title + endpoint match
 		if strings.EqualFold(existing.Title, title) && existing.Endpoint == endpoint {
 			return tools.Result{
 				Output: fmt.Sprintf("⚠️ DUPLICATE: '%s' at endpoint '%s' already reported as %s. Skipping.", title, endpoint, existing.ID),
+			}, nil
+		}
+		
+		// Check 2: Same vulnerability TYPE on same normalized endpoint
+		if vulnType != "" && vulnType == existingType && normalizedEndpoint == existingNormEndpoint && normalizedEndpoint != "" {
+			return tools.Result{
+				Output: fmt.Sprintf("⚠️ DUPLICATE: Same vulnerability type '%s' already reported on endpoint '%s' as %s ('%s'). Skipping.\nIf this is genuinely different, use a distinct endpoint or describe how it differs.",
+					vulnType, endpoint, existing.ID, existing.Title),
 			}, nil
 		}
 	}
@@ -468,4 +483,67 @@ func classifySeverity(title, description, severity, proof string) (string, strin
 	}
 
 	return severity, "" // no cap needed
+}
+
+// extractVulnType extracts a canonical vulnerability type from title/description
+// for deduplication purposes. Returns empty string if type can't be determined.
+func extractVulnType(title, description string) string {
+	lower := strings.ToLower(title + " " + description)
+
+	vulnTypes := []struct {
+		typeName string
+		keywords []string
+	}{
+		{"xss", []string{"xss", "cross-site scripting", "cross site scripting", "reflected xss", "stored xss", "dom xss", "script injection"}},
+		{"sqli", []string{"sql injection", "sqli", "sql inject", "blind sql", "union select", "error-based sql"}},
+		{"ssrf", []string{"ssrf", "server-side request forgery", "server side request forgery"}},
+		{"idor", []string{"idor", "insecure direct object", "broken access control", "unauthorized access"}},
+		{"lfi", []string{"local file inclusion", "lfi", "file inclusion", "path traversal", "directory traversal"}},
+		{"rfi", []string{"remote file inclusion", "rfi"}},
+		{"rce", []string{"remote code execution", "rce", "command injection", "os command", "code execution"}},
+		{"csrf", []string{"csrf", "cross-site request forgery", "cross site request forgery"}},
+		{"xxe", []string{"xxe", "xml external entity"}},
+		{"open_redirect", []string{"open redirect", "url redirect", "unvalidated redirect"}},
+		{"auth_bypass", []string{"authentication bypass", "auth bypass", "login bypass"}},
+		{"info_disclosure", []string{"information disclosure", "info disclosure", "sensitive data exposure", "data leak"}},
+		{"missing_header", []string{"missing header", "security header", "x-frame-options", "content-security-policy", "hsts"}},
+		{"version_disclosure", []string{"version disclosure", "server header", "x-powered-by", "technology disclosure"}},
+		{"subdomain_takeover", []string{"subdomain takeover", "dangling dns", "unclaimed subdomain"}},
+		{"clickjacking", []string{"clickjacking", "ui redressing"}},
+		{"cors", []string{"cors", "cross-origin resource sharing"}},
+		{"crlf", []string{"crlf injection", "http response splitting"}},
+		{"ssti", []string{"ssti", "server-side template injection", "template injection"}},
+		{"deserialization", []string{"deserialization", "insecure deserialization"}},
+	}
+
+	for _, vt := range vulnTypes {
+		for _, kw := range vt.keywords {
+			if strings.Contains(lower, kw) {
+				return vt.typeName
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeEndpoint strips query params, fragments, and trailing slashes
+// so "/api/search?q=test" and "/api/search?q=foo" match as the same endpoint.
+func normalizeEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return ""
+	}
+
+	// Strip query parameters
+	if idx := strings.Index(endpoint, "?"); idx >= 0 {
+		endpoint = endpoint[:idx]
+	}
+	// Strip fragment
+	if idx := strings.Index(endpoint, "#"); idx >= 0 {
+		endpoint = endpoint[:idx]
+	}
+	// Strip trailing slashes
+	endpoint = strings.TrimRight(endpoint, "/")
+	// Lowercase for consistent comparison
+	return strings.ToLower(endpoint)
 }
