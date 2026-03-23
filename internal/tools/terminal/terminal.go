@@ -378,6 +378,11 @@ func installPackage(pkg string) string {
 		"assetfinder": "github.com/tomnomnom/assetfinder@latest",
 	}
 
+	// npm-installed tools
+	npmTools := map[string]string{
+		"playwright-cli": "@anthropic-ai/playwright-cli",
+	}
+
 	homeDir := os.Getenv("HOME")
 	if homeDir == "" {
 		homeDir = "/root"
@@ -409,6 +414,25 @@ func installPackage(pkg string) string {
 			return fmt.Sprintf("[install %s failed: %s]\n%s", pkg, err, truncate(string(out)))
 		}
 		return fmt.Sprintf("[installed %s successfully]", pkg)
+	}
+
+	// Special handling for npm-installed tools
+	if npmPkg, ok := npmTools[pkg]; ok {
+		installCmd := fmt.Sprintf("npm install -g %s 2>&1", npmPkg)
+		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second) // 10 min for npm install
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "bash", "-c", installCmd)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			// Try with sudo
+			installCmd = "sudo " + installCmd
+			cmd = exec.CommandContext(ctx, "bash", "-c", installCmd)
+			out, err = cmd.CombinedOutput()
+		}
+		if err != nil {
+			return fmt.Sprintf("[install %s via npm failed: %s]\n%s", pkg, err, truncate(string(out)))
+		}
+		return fmt.Sprintf("[installed %s via npm successfully]", pkg)
 	}
 
 	// Detect package manager and build install command

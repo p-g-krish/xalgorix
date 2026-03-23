@@ -270,6 +270,14 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 
 			pdf.SetY(headerY + 12)
 
+			// Verification method badge
+			if v.VerificationMethod != "" {
+				pdf.SetFont("Helvetica", "I", 7)
+				setColor(teal)
+				pdf.SetX(14)
+				pdf.CellFormat(0, 5, fmt.Sprintf("Verified via: %s", strings.ToUpper(v.VerificationMethod)), "", 1, "L", false, 0, "")
+			}
+
 			// Vuln meta row
 			metaY := pdf.GetY()
 			pdf.SetFont("Helvetica", "", 8)
@@ -322,6 +330,9 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 			if v.PoCScript != "" {
 				sections = append(sections, section{"POC SCRIPT", v.PoCScript})
 			}
+			if v.ExploitationProof != "" {
+				sections = append(sections, section{"EXPLOITATION PROOF", v.ExploitationProof})
+			}
 			if v.Remediation != "" {
 				sections = append(sections, section{"REMEDIATION", v.Remediation})
 			}
@@ -347,17 +358,38 @@ func (s *Server) generateReport(scan *ScanRecord) (string, error) {
 
 				// Content
 				pdf.SetFont("Helvetica", "", 9)
-				if sec.label == "POC SCRIPT" || sec.label == "ENDPOINT" {
-					// Code-style content
+				if sec.label == "POC SCRIPT" || sec.label == "ENDPOINT" || sec.label == "EXPLOITATION PROOF" {
+					// Code-style content with dynamic height
 					codeY := pdf.GetY()
 					content := sec.content
-					if len(content) > 1200 {
-						content = content[:1200] + "\n... (truncated)"
+					if len(content) > 2000 {
+						content = content[:2000] + "\n... (truncated)"
 					}
-					drawRect(14, codeY, 182, 25, [3]int{20, 25, 40})
+					// Calculate dynamic height based on content
+					lines := strings.Count(content, "\n") + 1
+					blockHeight := float64(lines)*4 + 6 // 4mm per line + padding
+					if blockHeight < 15 {
+						blockHeight = 15
+					}
+					if blockHeight > 150 {
+						blockHeight = 150 // Cap to prevent page overflow
+					}
+					// Check if we need a new page for this code block
+					if codeY+blockHeight > 270 {
+						pdf.AddPage()
+						drawRect(0, 0, 210, 297, darkBg)
+						drawRect(0, 0, 210, 1.5, coral)
+						pdf.SetY(15)
+						codeY = pdf.GetY()
+					}
+					drawRect(14, codeY, 182, blockHeight, [3]int{20, 25, 40})
 					pdf.SetXY(17, codeY+3)
 					pdf.SetFont("Courier", "", 7)
-					setColor(cyan)
+					if sec.label == "EXPLOITATION PROOF" {
+						setColor([3]int{255, 200, 100}) // Gold/amber for exploitation proof
+					} else {
+						setColor(cyan)
+					}
 					pdf.MultiCell(175, 4, content, "", "L", false)
 				} else {
 					setColor(white)
@@ -474,9 +506,13 @@ https://github.com/xalgord/xalgorix`
 	setColor(white)
 	pdf.MultiCell(182, 5, disclaimer, "", "L", false)
 
-	// Save PDF
+	// Save PDF — use currentScanDir which is the actual scan directory
 	filename := fmt.Sprintf("xalgorix_report_%s.pdf", scan.ID)
-	outPath := filepath.Join(s.dataDir, scan.ID, filename)
+	// Try saving to the scan directory first, fall back to dataDir
+	outPath := filepath.Join(s.currentScanDir, filename)
+	if s.currentScanDir == "" {
+		outPath = filepath.Join(s.dataDir, filename)
+	}
 	err := pdf.OutputFileAndClose(outPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate PDF: %w", err)

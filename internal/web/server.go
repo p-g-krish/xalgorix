@@ -29,7 +29,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.5.1"
+const version = "3.5.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -159,19 +159,21 @@ type WSEvent struct {
 
 // VulnSummary is a simplified vulnerability for the UI.
 type VulnSummary struct {
-	ID                string  `json:"id"`
-	Title             string  `json:"title"`
-	Severity          string  `json:"severity"`
-	Endpoint          string  `json:"endpoint"`
-	CVSS              float64 `json:"cvss"`
-	Description       string  `json:"description,omitempty"`
-	Impact            string  `json:"impact,omitempty"`
-	Method            string  `json:"method,omitempty"`
-	CVE               string  `json:"cve,omitempty"`
-	TechnicalAnalysis string  `json:"technical_analysis,omitempty"`
-	PoCDescription    string  `json:"poc_description,omitempty"`
-	PoCScript         string  `json:"poc_script,omitempty"`
-	Remediation       string  `json:"remediation,omitempty"`
+	ID                 string  `json:"id"`
+	Title              string  `json:"title"`
+	Severity           string  `json:"severity"`
+	Endpoint           string  `json:"endpoint"`
+	CVSS               float64 `json:"cvss"`
+	Description        string  `json:"description,omitempty"`
+	Impact             string  `json:"impact,omitempty"`
+	Method             string  `json:"method,omitempty"`
+	CVE                string  `json:"cve,omitempty"`
+	TechnicalAnalysis  string  `json:"technical_analysis,omitempty"`
+	PoCDescription     string  `json:"poc_description,omitempty"`
+	PoCScript          string  `json:"poc_script,omitempty"`
+	Remediation        string  `json:"remediation,omitempty"`
+	ExploitationProof  string  `json:"exploitation_proof,omitempty"`
+	VerificationMethod string  `json:"verification_method,omitempty"`
 }
 
 // ScanRecord is a persisted scan result.
@@ -564,7 +566,7 @@ func (s *Server) runMultiScan(req ScanRequest) {
 		s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 		os.MkdirAll(s.currentScanDir, 0755)
 
-		// Build the instruction with scan mode context
+		// Build the instruction FRESH for each target (don't mutate across iterations)
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			// PHASE 1: First do comprehensive subdomain enumeration
@@ -737,12 +739,8 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 				os.MkdirAll(s.currentScanDir, 0755)
 
-				// Build autonomous single-target instruction
+				// Build autonomous single-target instruction (already includes custom instructions)
 				scanInstruction := buildAutonomousInstruction(subdomain, req.Instruction)
-				// Append user's custom instructions if provided
-				if req.Instruction != "" {
-					scanInstruction += "\n\n" + req.Instruction
-				}
 
 				s.broadcast(WSEvent{
 					Type:         "target_started",
@@ -753,11 +751,15 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 					TotalTargets: len(subdomains),
 				})
 
+				// Track vulns BEFORE this subdomain scan to only count new ones
+				vulnCountBefore := len(reporting.GetVulnerabilities())
+
 				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
 
-				// Generate PDF for this subdomain if vulnerabilities found
-				subVulns := reporting.GetVulnerabilities()
-				if len(subVulns) > 0 {
+				// Generate PDF for this subdomain if NEW vulnerabilities found
+				allVulns := reporting.GetVulnerabilities()
+				newVulns := allVulns[vulnCountBefore:] // Only vulns from THIS subdomain
+				if len(newVulns) > 0 {
 					subScanRecord := ScanRecord{
 						ID:        filepath.Base(s.currentScanDir),
 						Target:    subdomain,
@@ -766,12 +768,12 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 						FinishedAt: time.Now().Format(time.RFC3339),
 						Vulns:     []VulnSummary{},
 					}
-					for _, v := range subVulns {
+					for _, v := range newVulns {
 						subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
 					}
 					reportPath, err := s.generateReport(&subScanRecord)
 					if err == nil {
-						desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(subVulns))
+						desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(newVulns))
 						s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
 					}
 				}
@@ -1063,19 +1065,21 @@ func (s *Server) runSingleScan(targets []string, instruction string, severityFil
 // vulnToSummary converts a reporting.Vulnerability to a VulnSummary with all fields.
 func vulnToSummary(v reporting.Vulnerability) VulnSummary {
 	return VulnSummary{
-		ID:                v.ID,
-		Title:             v.Title,
-		Severity:          v.Severity,
-		Endpoint:          v.Endpoint,
-		CVSS:              v.CVSS,
-		Description:       v.Description,
-		Impact:            v.Impact,
-		Method:            v.Method,
-		CVE:               v.CVE,
-		TechnicalAnalysis: v.TechnicalAnalysis,
-		PoCDescription:    v.PoCDescription,
-		PoCScript:         v.PoCScript,
-		Remediation:       v.Remediation,
+		ID:                 v.ID,
+		Title:              v.Title,
+		Severity:           v.Severity,
+		Endpoint:           v.Endpoint,
+		CVSS:               v.CVSS,
+		Description:        v.Description,
+		Impact:             v.Impact,
+		Method:             v.Method,
+		CVE:                v.CVE,
+		TechnicalAnalysis:  v.TechnicalAnalysis,
+		PoCDescription:     v.PoCDescription,
+		PoCScript:          v.PoCScript,
+		Remediation:        v.Remediation,
+		ExploitationProof:  v.ExploitationProof,
+		VerificationMethod: v.VerificationMethod,
 	}
 }
 

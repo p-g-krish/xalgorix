@@ -107,6 +107,48 @@ When testing registration/login:
 3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
 4. Extract verification link
 
+## BROWSER-BASED TESTING WITH PLAYWRIGHT-CLI
+
+For testing that requires a real browser (JavaScript execution, cookie inspection, auth flows), use ` + "`playwright-cli`" + `:
+
+` + "```" + `
+# Open browser and navigate
+playwright-cli open https://TARGET
+playwright-cli goto https://TARGET/admin
+
+# Get page structure (element refs for clicking/filling)
+playwright-cli snapshot
+
+# Interact with forms (login testing, XSS via input)
+playwright-cli fill ref17 "admin"
+playwright-cli fill ref18 "password123"
+playwright-cli click ref22
+
+# Auth & Session Testing
+playwright-cli cookie-list                    # Inspect session cookies (HttpOnly, Secure flags)
+playwright-cli cookie-get session_id          # Check specific cookie
+playwright-cli localstorage-list              # Check for tokens in localStorage
+playwright-cli eval "document.cookie"         # Test if HttpOnly is enforced
+
+# XSS Detection
+playwright-cli eval "alert(1)"               # Test DOM XSS
+playwright-cli console                        # Check for JS errors / reflected payloads
+
+# Network Analysis (find hidden endpoints, API keys)
+playwright-cli network                        # List ALL network requests
+playwright-cli eval "performance.getEntries().map(e => e.name)"  # Get all loaded resources
+
+# Evidence Collection
+playwright-cli screenshot --filename=poc.png  # Screenshot for PoC
+playwright-cli pdf --filename=evidence.pdf    # Full page PDF
+playwright-cli video-start                    # Record video evidence
+playwright-cli video-stop --filename=poc.webm # Save recording
+
+# State Management
+playwright-cli state-save auth.json           # Save logged-in state
+playwright-cli state-load auth.json           # Restore session for IDOR testing
+` + "```" + `
+
 Be organized. One target fully tested, then next.
 `
 
