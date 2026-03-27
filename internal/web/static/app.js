@@ -37,6 +37,9 @@
     let loadedTargets = [];
     let currentTargetIdx = 0;
     let totalTargets = 0;
+    let currentSubIdx = 0;
+    let totalSubTargets = 0;
+    let parentTarget = '';
 
     const TOOL_ICONS = {
         terminal_execute: '⚡', browser_action: '🌐', view_file: '📝', create_file: '📝',
@@ -171,7 +174,23 @@
 
             case 'target_started':
                 currentTargetIdx = evt.target_index || 1;
-                updateQueueBar(currentTargetIdx, totalTargets, evt.target);
+                // Only update totalTargets from real top-level events (not subdomain events)
+                if (evt.total_targets && evt.total_targets > 0) {
+                    totalTargets = evt.total_targets;
+                }
+                // Track sub-target progress for wildcard scanning
+                if (evt.sub_target_index && evt.sub_target_total) {
+                    currentSubIdx = evt.sub_target_index;
+                    totalSubTargets = evt.sub_target_total;
+                    parentTarget = evt.parent_target || '';
+                    updateQueueBar(currentTargetIdx, totalTargets, evt.target, currentSubIdx, totalSubTargets);
+                } else {
+                    currentSubIdx = 0;
+                    totalSubTargets = 0;
+                    parentTarget = '';
+                    updateQueueBar(currentTargetIdx, totalTargets, evt.target);
+                }
+                if (totalTargets > 1 || totalSubTargets > 0) showQueueBar();
                 addFeedItem(renderTargetBanner(evt.target));
                 if (evt.agent_id) {
                     history.pushState(null, '', '/' + evt.agent_id);
@@ -475,10 +494,27 @@
         document.getElementById('queue-bar').classList.add('active');
     }
 
-    function updateQueueBar(idx, total, target) {
-        document.getElementById('queue-progress').textContent = `Scanning ${idx}/${total}`;
+    function updateQueueBar(idx, total, target, subIdx, subTotal) {
+        let progressText;
+        if (subIdx && subTotal) {
+            // Wildcard subdomain scanning: show "1.3/2" format
+            progressText = `Scanning ${idx}.${subIdx}/${total} (${subIdx}/${subTotal} subdomains)`;
+        } else {
+            progressText = `Scanning ${idx}/${total}`;
+        }
+        document.getElementById('queue-progress').textContent = progressText;
         document.getElementById('queue-target').textContent = target || '';
-        document.getElementById('queue-fill').style.width = `${(idx / total) * 100}%`;
+        // Calculate fill percentage
+        let fillPercent;
+        if (subIdx && subTotal) {
+            // Sub-progress within current main target
+            const mainProgress = (idx - 1) / total;
+            const subProgress = subIdx / subTotal / total;
+            fillPercent = (mainProgress + subProgress) * 100;
+        } else {
+            fillPercent = (idx / total) * 100;
+        }
+        document.getElementById('queue-fill').style.width = `${fillPercent}%`;
     }
 
     function hideQueueBar() {

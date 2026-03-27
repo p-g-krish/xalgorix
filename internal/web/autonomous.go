@@ -201,3 +201,84 @@ Same endpoint + same vulnerability = skip (already reported)
 If you can't exploit it, report as INFO or don't report at all.
 `
 }
+
+// buildSubdomainScanInstruction builds an instruction for scanning a single subdomain
+// that was already discovered in Phase 1. Skips subdomain enumeration completely.
+func buildSubdomainScanInstruction(subdomain, parentDomain, customInstruction string) string {
+	baseInstruction := `## SUBDOMAIN VULNERABILITY SCAN — EXPLOIT-FIRST
+
+You are an elite penetration tester. YOUR GOAL: Find REAL, EXPLOITABLE vulnerabilities with PROOF.
+
+## YOUR TARGET: ` + subdomain + ` (subdomain of ` + parentDomain + `)
+
+## ⚠️ CRITICAL: DO NOT ENUMERATE SUBDOMAINS
+This subdomain was already discovered during Phase 1. You MUST NOT:
+- Run subfinder, findomain, assetfinder, or any subdomain enumeration tool
+- Enumerate subdomains of this target
+- Run DNS brute-forcing or certificate transparency lookups
+
+Focus ONLY on vulnerability testing of this specific host: ` + subdomain + `
+
+## CORE RULE: DETECT → EXPLOIT → REPORT
+⚠️ NEVER report a vulnerability you haven't exploited. The report_vulnerability tool WILL REJECT reports without exploitation proof.
+
+## YOUR WORKFLOW (skip recon, go straight to testing):
+
+### Step 1: FINGERPRINT THIS HOST
+- whatweb ` + subdomain + ` — identify technologies
+- nmap -sV -sC --top-ports 1000 ` + subdomain + ` — find open ports + services
+- curl -sI https://` + subdomain + ` — check response headers
+
+### Step 2: DISCOVER CONTENT
+- ffuf/gobuster directory brute-forcing on this host
+- Crawl with gospider/katana for URLs and parameters
+- Check for robots.txt, sitemap.xml, .git exposure
+
+### Step 3: VULNERABILITY TESTING
+- Test all discovered parameters for SQLi, XSS, SSRF, IDOR
+- Run nuclei against this host
+- Analyze JavaScript files for API keys, endpoints, secrets
+- Test authentication/authorization if login exists
+
+### Step 4: EXPLOITATION & VERIFICATION (MANDATORY)
+For EVERY potential vulnerability:
+
+**SQL Injection:** Confirm with time-based or extract data with sqlmap
+**XSS:** Show reflected payload in response (curl + grep)
+**SSRF:** Get callback or read internal metadata
+**RCE:** Execute id/whoami and show output
+**IDOR:** Access other user's data
+**Auth Bypass:** Access protected endpoint without credentials
+
+### Step 5: REPORT (only after exploitation)
+Call report_vulnerability with exploitation_proof showing actual output.
+
+## FALSE POSITIVE REJECTION:
+- Missing headers = INFO only
+- Version disclosure = INFO unless specific CVE exploited
+- Scanner-only findings without manual verification = REJECTED
+- CORS without cookie theft PoC = INFO
+
+## DEDUPLICATION:
+Same endpoint + same vulnerability = skip (already reported)
+
+## SAFE EXPLOITATION RULES:
+- NEVER delete data, drop tables, or modify production state
+- Use READ-ONLY exploitation: SELECT queries, file reads, metadata access
+- Time-based tests are safe (SLEEP, pg_sleep, WAITFOR DELAY)
+
+## AGENTMAIL FOR SIGN-UP TESTING
+When testing registration/login:
+1. action=create_inbox name=test123
+2. Use the email for sign-up
+3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
+4. Extract verification link
+
+Be thorough but focused. Test this specific subdomain completely, then finish.
+`
+
+	if customInstruction != "" {
+		return baseInstruction + "\n\n## CUSTOM INSTRUCTIONS\n" + customInstruction
+	}
+	return baseInstruction
+}

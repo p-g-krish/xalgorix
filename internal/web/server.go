@@ -31,7 +31,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.5.7"
+const version = "3.5.8"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -144,19 +144,22 @@ type ScanRequest struct {
 
 // WSEvent is a WebSocket message sent to clients.
 type WSEvent struct {
-	Type         string            `json:"type"`
-	Content      string            `json:"content,omitempty"`
-	ToolName     string            `json:"tool_name,omitempty"`
-	ToolArgs     map[string]string `json:"tool_args,omitempty"`
-	Output       string            `json:"output,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	AgentID      string            `json:"agent_id,omitempty"`
-	Timestamp    string            `json:"timestamp,omitempty"`
-	Vulns        []VulnSummary     `json:"vulns,omitempty"`
-	TargetIndex  int               `json:"target_index,omitempty"`
-	TotalTargets int               `json:"total_targets,omitempty"`
-	Target       string            `json:"target,omitempty"`
-	TotalTokens  int               `json:"total_tokens,omitempty"`
+	Type            string            `json:"type"`
+	Content         string            `json:"content,omitempty"`
+	ToolName        string            `json:"tool_name,omitempty"`
+	ToolArgs        map[string]string `json:"tool_args,omitempty"`
+	Output          string            `json:"output,omitempty"`
+	Error           string            `json:"error,omitempty"`
+	AgentID         string            `json:"agent_id,omitempty"`
+	Timestamp       string            `json:"timestamp,omitempty"`
+	Vulns           []VulnSummary     `json:"vulns,omitempty"`
+	TargetIndex     int               `json:"target_index,omitempty"`
+	TotalTargets    int               `json:"total_targets,omitempty"`
+	Target          string            `json:"target,omitempty"`
+	TotalTokens     int               `json:"total_tokens,omitempty"`
+	SubTargetIndex  int               `json:"sub_target_index,omitempty"`  // subdomain index within a wildcard target
+	SubTargetTotal  int               `json:"sub_target_total,omitempty"`  // total subdomains for current wildcard target
+	ParentTarget    string            `json:"parent_target,omitempty"`     // parent domain for subdomain scans
 }
 
 // VulnSummary is a simplified vulnerability for the UI.
@@ -387,6 +390,16 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		var req ScanRequest
 		if err := json.Unmarshal(msg, &req); err == nil && len(req.Targets) > 0 {
+			// Apply LLM provider settings from WebSocket message (same as handleScan)
+			if req.Model != "" {
+				s.cfg.LLM = req.Model
+			}
+			if req.APIKey != "" {
+				s.cfg.APIKey = req.APIKey
+			}
+			if req.APIBase != "" {
+				s.cfg.APIBase = req.APIBase
+			}
 			go s.runMultiScan(req)
 		}
 	}
@@ -728,7 +741,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				TotalTargets: totalTargets,
 			})
 
-			// PHASE 2: Scan each subdomain individually with comprehensive vulnerability testing
+			// PHASE 2: Scan each subdomain individually — SKIP subdomain enumeration (already done in Phase 1)
 			for j, subdomain := range subdomains {
 				if s.stopReq {
 					s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
@@ -744,16 +757,19 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
 				os.MkdirAll(s.currentScanDir, 0755)
 
-				// Build autonomous single-target instruction (already includes custom instructions)
-				scanInstruction := buildAutonomousInstruction(subdomain, req.Instruction)
+				// Use subdomain-specific instruction that SKIPS subdomain enumeration
+				scanInstruction := buildSubdomainScanInstruction(subdomain, target, req.Instruction)
 
 				s.broadcast(WSEvent{
-					Type:         "target_started",
-					Content:      fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
-					Target:       subdomain,
-					AgentID:      filepath.Base(s.currentScanDir),
-					TargetIndex:  j + 1,
-					TotalTargets: len(subdomains),
+					Type:           "target_started",
+					Content:        fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
+					Target:         subdomain,
+					AgentID:        filepath.Base(s.currentScanDir),
+					TargetIndex:    i + 1,           // Keep main target index (1-based)
+					TotalTargets:   totalTargets,     // Keep ORIGINAL total targets count
+					SubTargetIndex: j + 1,            // Subdomain index within this wildcard target
+					SubTargetTotal: len(subdomains),  // Total subdomains for this wildcard target
+					ParentTarget:   target,           // Parent domain
 				})
 
 				// Track vulns BEFORE this subdomain scan to only count new ones
@@ -784,11 +800,14 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				}
 
 				s.broadcast(WSEvent{
-					Type:         "target_completed",
-					Content:      fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
-					Target:       subdomain,
-					TargetIndex:  j + 1,
-					TotalTargets: len(subdomains),
+					Type:           "target_completed",
+					Content:        fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
+					Target:         subdomain,
+					TargetIndex:    i + 1,
+					TotalTargets:   totalTargets,
+					SubTargetIndex: j + 1,
+					SubTargetTotal: len(subdomains),
+					ParentTarget:   target,
 				})
 			}
 
