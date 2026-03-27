@@ -782,14 +782,18 @@
         const apiBase = document.getElementById('llm-apibase').value.trim();
 
         const p = LLM_PROVIDERS[provider] || {};
-        const effectiveModel = modelInput || p.model || '';
-        if (effectiveModel) {
-            payload.model = p.prefix ? `${p.prefix}/${effectiveModel}` : effectiveModel;
+        // Only send LLM overrides if the user explicitly provided an API key or model in the UI.
+        // If both are empty, the backend uses its own .xalgorix.env config.
+        if (apiKey || modelInput) {
+            const effectiveModel = modelInput || p.model || '';
+            if (effectiveModel) {
+                payload.model = p.prefix ? `${p.prefix}/${effectiveModel}` : effectiveModel;
+            }
+            if (!apiBase && p.base) {
+                payload.api_base = p.base;
+            }
+            if (apiKey) payload.api_key = apiKey;
         }
-        if (!apiBase && p.base) {
-            payload.api_base = p.base;
-        }
-        if (apiKey) payload.api_key = apiKey;
         if (apiBase) payload.api_base = apiBase;
 
         const discordWebhook = document.getElementById('discord-webhook')?.value?.trim();
