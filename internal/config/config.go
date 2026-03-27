@@ -234,7 +234,8 @@ func envOrBool(key string, fallback bool) bool {
 	return fallback
 }
 
-// loadEnvFile reads a KEY=VALUE env file and sets env vars that aren't already set.
+// loadEnvFile reads a KEY=VALUE env file and sets env vars.
+// Later calls override earlier ones, so higher-priority files should be loaded last.
 func loadEnvFile(path string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -259,9 +260,7 @@ func loadEnvFile(path string) {
 		value := strings.TrimSpace(parts[1])
 		// Strip surrounding quotes
 		value = strings.Trim(value, "\"'")
-		// Only set if not already defined in environment
-		if os.Getenv(key) == "" {
-			os.Setenv(key, value)
-		}
+		// Always set — later files override earlier ones
+		os.Setenv(key, value)
 	}
 }
