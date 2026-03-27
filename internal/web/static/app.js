@@ -782,9 +782,10 @@
         const apiBase = document.getElementById('llm-apibase').value.trim();
 
         const p = LLM_PROVIDERS[provider] || {};
-        // Only send LLM overrides if the user explicitly provided an API key or model in the UI.
-        // If both are empty, the backend uses its own .xalgorix.env config.
-        if (apiKey || modelInput) {
+        // Only send LLM overrides if the user explicitly provided an API key in the UI.
+        // The model/apibase fields are auto-populated by provider dropdown selection,
+        // so they alone don't indicate user intent. The backend .xalgorix.env is used otherwise.
+        if (apiKey) {
             const effectiveModel = modelInput || p.model || '';
             if (effectiveModel) {
                 payload.model = p.prefix ? `${p.prefix}/${effectiveModel}` : effectiveModel;
@@ -792,7 +793,7 @@
             if (!apiBase && p.base) {
                 payload.api_base = p.base;
             }
-            if (apiKey) payload.api_key = apiKey;
+            payload.api_key = apiKey;
         }
         if (apiBase) payload.api_base = apiBase;
 
