@@ -12,6 +12,7 @@ import (
 
 	"github.com/xalgord/xalgorix/internal/config"
 	"github.com/xalgord/xalgorix/internal/tools"
+	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
 // Register adds the python_action tool to the registry.
@@ -58,7 +59,19 @@ func executePython(args map[string]string) (tools.Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return tools.Result{Error: fmt.Sprintf("Failed to start python process: %v", err)}, nil
+	}
+
+	// Register with terminal so watchdog knows we are active
+	cleanCode := code
+	if len(cleanCode) > 100 {
+		cleanCode = cleanCode[:100] + "..."
+	}
+	terminal.TrackProcess(cmd, cancel, "python: "+strings.ReplaceAll(cleanCode, "\n", " "))
+	defer terminal.UntrackProcess(cmd)
+
+	err := cmd.Wait()
 
 	var b strings.Builder
 	if stdout.Len() > 0 {

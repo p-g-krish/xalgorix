@@ -51,20 +51,21 @@ type toolExecResult struct {
 
 // Agent runs the LLM agent loop.
 type Agent struct {
-	ID           string
-	Name         string
-	cfg          *config.Config
-	client       *llm.Client
-	registry     *tools.Registry
-	messages     []llm.Message
-	msgMu        sync.Mutex
-	events       chan Event
-	maxIter      int
-	stopped      atomic.Bool
-	ctx          context.Context
-	cancel       context.CancelFunc
-	lastActivity time.Time
-	activityMu   sync.Mutex
+	ID            string
+	Name          string
+	cfg           *config.Config
+	client        *llm.Client
+	registry      *tools.Registry
+	messages      []llm.Message
+	msgMu         sync.Mutex
+	events        chan Event
+	maxIter       int
+	stopped       atomic.Bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	lastActivity  time.Time
+	activityMu    sync.Mutex
+	discoveryMode bool // When true, allow finish at any iteration (for Phase 1 enumeration)
 }
 
 // NewAgent creates a new agent.
@@ -139,6 +140,12 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 	})
 
 	return a
+}
+
+// SetDiscoveryMode configures the agent to skip minimum iteration checks on finish.
+// Used for Phase 1 subdomain enumeration where we want the agent to exit immediately.
+func (a *Agent) SetDiscoveryMode(enabled bool) {
+	a.discoveryMode = enabled
 }
 
 // stripThink removes <think>...</think> blocks from the response.
@@ -428,7 +435,7 @@ Call a tool NOW in your next response.`
 			})
 
 			if tc.Name == "finish" || (result.Metadata != nil && result.Metadata["finished"] == true) {
-				if iter < minIterationsBeforeFinish {
+				if !a.discoveryMode && iter < minIterationsBeforeFinish {
 					rejectMsg := fmt.Sprintf(`⚠️ FINISH REJECTED — You are only on iteration %d/%d minimum.
 
 You have NOT completed a thorough assessment. You MUST continue testing:
@@ -456,6 +463,8 @@ Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish
 			a.messages = append(a.messages, llm.Message{Role: "user", Content: resultMsg})
 			a.msgMu.Unlock()
 		}
+		// Prune message history to prevent context window overflow
+		a.pruneMessages()
 		// ZERO DELAY — immediately proceed to next iteration
 	}
 
@@ -471,6 +480,7 @@ func (a *Agent) Stop() {
 	}
 
 	terminal.KillAllProcesses()
+	browser.CleanupBrowser()
 }
 
 // SendMessage allows sending additional messages to the agent during a scan
@@ -557,6 +567,44 @@ func getToolSuggestion(toolName, errorMsg string) string {
 	}
 
 	return ""
+}
+
+// pruneMessages trims the message history to prevent context window overflow.
+// Strategy: keep system prompt (msg[0]), keep last N messages, truncate large tool
+// outputs in older messages.
+func (a *Agent) pruneMessages() {
+	a.msgMu.Lock()
+	defer a.msgMu.Unlock()
+
+	const maxMessages = 80
+	const maxOldMsgLen = 500
+
+	if len(a.messages) <= maxMessages {
+		return
+	}
+
+	// Keep system prompt (index 0) + the most recent keepRecent messages
+	keepRecent := 40
+	if keepRecent > len(a.messages)-1 {
+		keepRecent = len(a.messages) - 1
+	}
+
+	// Build pruned list: system prompt + trimmed old messages + recent messages
+	cutoff := len(a.messages) - keepRecent
+	pruned := make([]llm.Message, 0, keepRecent+2)
+	pruned = append(pruned, a.messages[0]) // system prompt
+
+	// Add a summary marker so the LLM knows context was pruned
+	pruned = append(pruned, llm.Message{
+		Role:    "user",
+		Content: fmt.Sprintf("[CONTEXT PRUNED: %d older messages were trimmed to save context space. Continue from where you left off.]", cutoff-1),
+	})
+
+	// Keep recent messages intact
+	pruned = append(pruned, a.messages[cutoff:]...)
+	a.messages = pruned
+
+	log.Printf("[agent] Pruned message history: kept %d messages (was %d)", len(a.messages), cutoff+keepRecent)
 }
 
 func (a *Agent) emit(evt Event) {

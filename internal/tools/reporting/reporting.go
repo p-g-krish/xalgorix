@@ -267,6 +267,22 @@ func checkFalsePositive(title, description, severity, proof string) string {
 		}
 	}
 
+	// Pattern 6: SSL/TLS issues (weak ciphers, old TLS versions)
+	sslKeywords := []string{"ssl", "tls", "cipher", "certificate", "sweet32", "poodle", "heartbleed", "beast", "crime"}
+	for _, kw := range sslKeywords {
+		if strings.Contains(lower, kw) {
+			return "❌ REJECTED: SSL/TLS configuration issues (weak ciphers, old versions) are OUT OF SCOPE. Do not report them."
+		}
+	}
+
+	// Pattern 7: DNS configuration issues (SPF, DMARC, TXT)
+	dnsKeywords := []string{"spf", "dmarc", "dkim", "domain-based message authentication", "sender policy framework", "txt record", "email spoofing"}
+	for _, kw := range dnsKeywords {
+		if strings.Contains(lower, kw) {
+			return "❌ REJECTED: DNS and email configuration issues (SPF, DMARC, TXT, DKIM) are OUT OF SCOPE. Do not report them."
+		}
+	}
+
 	return ""
 }
 

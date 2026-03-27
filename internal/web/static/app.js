@@ -266,7 +266,10 @@
                     popStat('stat-vulns');
                     renderVulns(evt.vulns);
                 }
-                if (totalTargets <= 1) {
+                // Only mark scan as complete if this is a single-target scan
+                // with no queue. For multi-target/wildcard scans, queue_finished
+                // handles the final state transition.
+                if (totalTargets <= 1 && totalSubTargets <= 0) {
                     scanRunning = false;
                     setStatus('finished', 'COMPLETED');
                     stopTimer();

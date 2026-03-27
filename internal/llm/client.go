@@ -192,7 +192,11 @@ func (c *Client) ChatStream(messages []Message) <-chan StreamChunk {
 		}
 
 		body, _ := json.Marshal(reqBody)
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		reqCtx := c.ctx
+		if reqCtx == nil {
+			reqCtx = context.Background()
+		}
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			ch <- StreamChunk{Err: err}
 			return

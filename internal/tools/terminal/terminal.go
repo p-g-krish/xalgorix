@@ -56,6 +56,33 @@ func GetActiveCommand() (string, time.Duration) {
 	return activeCommand, time.Since(activeStartTime)
 }
 
+// TrackProcess registers a command to be tracked by the watchdog and killed on Stop.
+func TrackProcess(cmd *exec.Cmd, cancel context.CancelFunc, commandStr string) {
+	processMutex.Lock()
+	processGroup[cmd] = cancel
+	processMutex.Unlock()
+
+	activeCommandMu.Lock()
+	if len(commandStr) > 200 {
+		activeCommand = commandStr[:200] + "..."
+	} else {
+		activeCommand = commandStr
+	}
+	activeStartTime = time.Now()
+	activeCommandMu.Unlock()
+}
+
+// UntrackProcess removes a command from tracking once it completes.
+func UntrackProcess(cmd *exec.Cmd) {
+	processMutex.Lock()
+	delete(processGroup, cmd)
+	processMutex.Unlock()
+
+	activeCommandMu.Lock()
+	activeCommand = ""
+	activeCommandMu.Unlock()
+}
+
 // SetStreamCallback sets a callback that receives partial output from running commands.
 // The callback is called periodically with the latest output chunk.
 func SetStreamCallback(cb func(partialOutput string)) {
@@ -326,17 +353,8 @@ func runShell(command string) (string, int) {
 		Setpgid: true,
 	}
 
-	// Track what's running (for watchdog)
-	activeCommandMu.Lock()
 	// Store a clean version of the command (strip venv activation prefix)
 	cleanCmd := strings.TrimPrefix(command, venvActivate)
-	if len(cleanCmd) > 200 {
-		activeCommand = cleanCmd[:200] + "..."
-	} else {
-		activeCommand = cleanCmd
-	}
-	activeStartTime = time.Now()
-	activeCommandMu.Unlock()
 
 	// Use pipes for real-time output streaming
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -348,20 +366,13 @@ func runShell(command string) (string, int) {
 		return fmt.Sprintf("Failed to create stderr pipe: %v", err), -1
 	}
 
-	// Register process for tracking
-	processMutex.Lock()
-	processGroup[cmd] = cancel
-	processMutex.Unlock()
-
+	// Start the command
 	if err := cmd.Start(); err != nil {
-		processMutex.Lock()
-		delete(processGroup, cmd)
-		processMutex.Unlock()
-		activeCommandMu.Lock()
-		activeCommand = ""
-		activeCommandMu.Unlock()
 		return fmt.Sprintf("Failed to start command: %v", err), -1
 	}
+	
+	TrackProcess(cmd, cancel, cleanCmd)
+	defer UntrackProcess(cmd)
 
 	// Read output in goroutines with periodic streaming
 	var stdout, stderr bytes.Buffer

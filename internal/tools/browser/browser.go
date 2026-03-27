@@ -367,14 +367,36 @@ func closeBrowser() (tools.Result, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	cleanupBrowserLocked()
+
+	return tools.Result{Output: "Browser closed"}, nil
+}
+
+// cleanupBrowserLocked closes browser resources (must hold mu).
+func cleanupBrowserLocked() {
 	if browser != nil {
 		browser.MustClose()
 		browser = nil
 		page = nil
 		pages = make(map[string]*rod.Page)
 	}
+}
 
-	return tools.Result{Output: "Browser closed"}, nil
+// CleanupBrowser safely closes any open browser and resets state.
+// Called between scan phases and on agent stop to prevent stale connection usage.
+func CleanupBrowser() {
+	mu.Lock()
+	defer mu.Unlock()
+	if browser != nil {
+		// Use recover to handle panics from already-dead browser processes
+		func() {
+			defer func() { recover() }()
+			browser.MustClose()
+		}()
+		browser = nil
+		page = nil
+		pages = make(map[string]*rod.Page)
+	}
 }
 
 func pageState(action, tabID string) (tools.Result, error) {

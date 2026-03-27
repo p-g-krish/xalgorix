@@ -31,7 +31,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.5.12"
+const version = "3.5.13"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -443,8 +443,11 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	s.stopReq = true
-	if s.agent != nil {
-		s.agent.Stop()
+	s.mu.Lock()
+	agnt := s.agent
+	s.mu.Unlock()
+	if agnt != nil {
+		agnt.Stop()
 	}
 	s.running = false
 	s.broadcast(WSEvent{Type: "stopped", Content: "Agent stopped by user"})
@@ -590,13 +593,19 @@ func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
 		instruction := req.Instruction
 		if req.ScanMode == "wildcard" {
 			// PHASE 1: First do comprehensive subdomain enumeration
-			discoveryInstruction := `# PHASE 1: SUBDOMAIN ENUMERATION
+			discoveryInstruction := `# PHASE 1: SUBDOMAIN ENUMERATION ONLY
 
-## YOUR TASK: Find ALL subdomains of TARGET
+## YOUR TASK: Find ALL subdomains of TARGET — NOTHING ELSE.
 
-## IMPORTANT: SAVE ALL FILES IN THE CURRENT DIRECTORY
-⚠️ DO NOT create subdirectories. Save all output files directly in the current working directory.
-⚠️ The system reads files from THIS directory to find your subdomains.
+## STRICT RULES:
+- You are ONLY allowed to enumerate subdomains in this phase.
+- DO NOT run any vulnerability scanners (nuclei, sqlmap, ffuf, gobuster, nikto, etc.).
+- DO NOT test for XSS, SQLi, SSRF, IDOR, or any other vulnerability.
+- DO NOT analyze JavaScript files, test authentication, or probe endpoints.
+- After collecting subdomains, you MUST call finish IMMEDIATELY.
+
+## SAVE ALL FILES IN THE CURRENT DIRECTORY
+Save all output files directly in the current working directory (not subdirectories).
 
 ## SUBDOMAIN ENUMERATION COMMANDS - RUN ALL:
 
@@ -634,10 +643,11 @@ cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdom
 echo "Live subdomains:"
 wc -l ./live_subdomains.txt
 
-## IMPORTANT:
-After running ALL commands, call add_note with the complete list of live subdomains from ./live_subdomains.txt
+## FINAL STEP (MANDATORY):
+1. Call add_note with the complete list of live subdomains from ./live_subdomains.txt
+2. Call finish IMMEDIATELY after. The system will handle vulnerability scanning of each subdomain separately.
 
-STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain for individual scanning.`
+DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NOW.`
 
 			// Replace TARGET placeholder with actual target
 			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)
@@ -655,8 +665,8 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				TotalTargets: totalTargets,
 			})
 
-			// Run discovery phase
-			s.runSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, true)
+			// Run discovery phase (no report, no state reset — this is just enumeration)
+			s.runSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, false, true)
 
 			// Read discovered subdomains from file
 			// Try multiple possible locations and formats
@@ -777,7 +787,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				// Track vulns BEFORE this subdomain scan to only count new ones
 				vulnCountBefore := len(reporting.GetVulnerabilities())
 
-				s.runSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
+				s.runSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
 
 				// Generate PDF for this subdomain if NEW vulnerabilities found
 				allVulns := reporting.GetVulnerabilities()
@@ -830,7 +840,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				TotalTargets: totalTargets,
 			})
 
-			s.runSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true)
+			s.runSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true, false)
 
 			s.broadcast(WSEvent{
 				Type:         "target_completed",
@@ -854,7 +864,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true)
+		s.runSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true, false)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -901,7 +911,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 	})
 }
 
-func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool) {
+func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
 	// Reset global state from previous scans (skip for wildcard mode to accumulate vulns)
 	if resetState {
 		reporting.ResetVulnerabilities()
@@ -912,7 +922,12 @@ func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruc
 	// Set working directory for terminal commands
 	terminal.SetWorkDir(s.currentScanDir)
 
-	s.agent = agent.NewAgent(s.cfg, "XalgorixAgent", events)
+	s.mu.Lock()
+	s.agent = agent.NewAgent(scanCfg, "XalgorixAgent", events)
+	if discoveryMode {
+		s.agent.SetDiscoveryMode(true)
+	}
+	s.mu.Unlock()
 
 	// Initialize scan record for persistence
 	scanRecord := ScanRecord{

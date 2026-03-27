@@ -101,12 +101,13 @@ If the answer to #1 is "just detected" → GO EXPLOIT IT FIRST.
 - Always prefer passive confirmation over active exploitation
 - If you're unsure whether an exploit is safe, use time-based or error-based confirmation
 
-## AGENTMAIL FOR SIGN-UP TESTING
-When testing registration/login:
-1. action=create_inbox name=test123
-2. Use the email for sign-up
-3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
-4. Extract verification link
+## UNIVERSAL EMAIL USAGE (STRICT REQUIREMENT)
+Whenever you need an email address for ANY test (SMTP Open Relay, form submissions, sign-ups, XSS/SSRF payloads, or contact forms):
+1. NEVER use random, fake, or external emails like test@gmail.com or admin@target.com.
+2. ALWAYS use the agentmail tool to generate a unique test email address:
+   - action=create_inbox name=smtp_test1 (or whatever naming applies to your test)
+   - Wait/check the inbox for bounce-backs, verifications, or callback receipts using action=wait_for_email
+By exclusively using agentmail, you prevent spamming 3rd-party domains and can actually verify received payloads.
 
 ## NATIVE BROWSER-BASED TESTING
 
@@ -244,12 +245,13 @@ Same endpoint + same vulnerability = skip (already reported)
 - Use READ-ONLY exploitation: SELECT queries, file reads, metadata access
 - Time-based tests are safe (SLEEP, pg_sleep, WAITFOR DELAY)
 
-## AGENTMAIL FOR SIGN-UP TESTING
-When testing registration/login:
-1. action=create_inbox name=test123
-2. Use the email for sign-up
-3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
-4. Extract verification link
+## UNIVERSAL EMAIL USAGE (STRICT REQUIREMENT)
+Whenever you need an email address for ANY test (SMTP Open Relay, form submissions, sign-ups, XSS/SSRF payloads, or contact forms):
+1. NEVER use random, fake, or external emails like test@gmail.com or admin@target.com.
+2. ALWAYS use the agentmail tool to generate a unique test email address:
+   - action=create_inbox name=smtp_test1
+   - Use the generated email in your payloads.
+   - Monitor the box using action=wait_for_email.
 
 Be thorough but focused. Test this specific subdomain completely, then finish.
 `
