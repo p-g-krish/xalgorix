@@ -241,10 +241,19 @@ func (a *AgentMail) GetMessage(inboxID, messageID string) (*Message, error) {
 	return &msg, nil
 }
 
-// WaitForEmail waits for an email with a specific subject or sender
+// WaitForEmail waits for a NEW email, optionally matching a subject keyword.
+// If subject is empty, returns the first new email that arrives after calling this function.
 func (a *AgentMail) WaitForEmail(inboxID, subject string, timeout time.Duration) (*Message, error) {
 	if !a.isConfigured() {
 		return nil, fmt.Errorf("AgentMail not configured")
+	}
+
+	// Snapshot existing message IDs so we only return NEW emails
+	existingIDs := map[string]bool{}
+	if existing, err := a.ListMessages(inboxID); err == nil {
+		for _, m := range existing {
+			existingIDs[m.ID] = true
+		}
 	}
 
 	ticker := time.NewTicker(3 * time.Second)
@@ -255,16 +264,26 @@ func (a *AgentMail) WaitForEmail(inboxID, subject string, timeout time.Duration)
 	for {
 		select {
 		case <-timeoutChan:
-			return nil, fmt.Errorf("timeout waiting for email with subject containing: %s (waited %v)", subject, timeout)
+			hint := subject
+			if hint == "" {
+				hint = "(any)"
+			}
+			return nil, fmt.Errorf("timeout waiting for email with subject containing: %s (waited %v)", hint, timeout)
 		case <-ticker.C:
 			messages, err := a.ListMessages(inboxID)
 			if err != nil {
 				continue
 			}
 			for _, msg := range messages {
-				if strings.Contains(strings.ToLower(msg.Subject), strings.ToLower(subject)) {
-					return &msg, nil
+				// Skip messages that existed before we started waiting
+				if existingIDs[msg.ID] {
+					continue
 				}
+				// If subject filter is set, match it
+				if subject != "" && !strings.Contains(strings.ToLower(msg.Subject), strings.ToLower(subject)) {
+					continue
+				}
+				return &msg, nil
 			}
 		}
 	}

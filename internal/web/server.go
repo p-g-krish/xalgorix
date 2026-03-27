@@ -12,8 +12,10 @@ import (
 	"io/fs"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -29,7 +31,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.5.5"
+const version = "3.5.6"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -268,6 +270,9 @@ func NewServer(cfg *config.Config, port int) *Server {
 // Start launches the web server.
 func (s *Server) Start() error {
 	s.initDataDir()
+
+	// Auto-start Caido proxy in background if available
+	startCaidoProxy()
 
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -1700,4 +1705,45 @@ func (s *Server) serveAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	w.Write(data)
+}
+
+// startCaidoProxy launches Caido proxy in background if it's installed and not already running.
+func startCaidoProxy() {
+	cfg := config.Get()
+	port := cfg.CaidoPort
+	if port == 0 {
+		port = 8080
+	}
+
+	// Check if something is already listening on the Caido port
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 1*time.Second)
+	if err == nil {
+		conn.Close()
+		log.Printf("Caido proxy already running on port %d", port)
+		return
+	}
+
+	// Check if caido binary exists
+	caidoPath, err := exec.LookPath("caido")
+	if err != nil {
+		log.Printf("Caido not installed — proxy features will use direct HTTP (install from https://caido.io)")
+		return
+	}
+
+	// Start Caido in background with --no-open (headless)
+	cmd := exec.Command(caidoPath, "--no-open", "--listen", fmt.Sprintf("127.0.0.1:%d", port))
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("⚠️  Failed to start Caido proxy: %v", err)
+		return
+	}
+
+	// Don't wait for the process — let it run in background
+	go func() {
+		cmd.Wait() // Reap zombie process
+	}()
+
+	log.Printf("✅ Caido proxy started on port %d (PID: %d)", port, cmd.Process.Pid)
 }

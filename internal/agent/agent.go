@@ -1076,14 +1076,25 @@ If API credentials provided (e.g., "API: am_us_xxx, username: agentmail"):
 4. Test authenticated API endpoints with the token
 5. Look for IDOR in API endpoints (change IDs in API calls)
 
-**Option 3: Email-based Service**
-If service provides email access (e.g., AgentMail):
-1. Check for IMAP/SMTP or web-based access
-2. Look for API endpoints to read/send emails
-3. Test for authorization bypass on email access
+**Option 3: Sign Up with AgentMail (RECOMMENDED for targets with registration)**
+If the target has a sign-up/registration form and you have the agentmail tool:
+1. Create an inbox: agentmail action=create_inbox username=testuser123
+2. Use the returned email (e.g., testuser123@agentmail.to) to register on the target
+3. Submit the registration form via browser or curl
+4. Wait for verification email: agentmail action=wait_for_email inbox_id=THE_ID subject=verify
+5. Extract the verification link or OTP code from the email body
+6. Complete registration by clicking the link or entering the code
+7. NOW test authenticated endpoints for IDOR, privilege escalation, etc.
+
+TIP: If the target requires email verification, ALWAYS use agentmail — it gives you real working email addresses instantly.
+
+### Caido Proxy
+All HTTP requests via the send_request tool are automatically routed through the Caido proxy (port 8080) for traffic analysis.
+Use list_requests to see all captured HTTP traffic. Use send_request instead of curl when you want requests logged in Caido.
 
 ### Test Authenticated Endpoints
    - Test cookie theft via XSS after login
+
 
 ### PHASE 5: Authentication & Session Testing
 - Test login forms for SQLi: ' OR 1=1--, admin'--,  " OR ""="
