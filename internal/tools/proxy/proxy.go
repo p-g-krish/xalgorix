@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,19 +149,30 @@ func sendRequest(args map[string]string) (tools.Result, error) {
 		client = &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
+				Proxy:           http.ProxyURL(proxyURL),
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
 		}
 		usedProxy = true
 	} else {
 		// Caido not available — use direct connection
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
 	}
 
 	resp, err := client.Do(req)
 	if err != nil && usedProxy {
 		// Proxy failed — fall back to direct request
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
 		resp, err = client.Do(req)
 		usedProxy = false
 	}
