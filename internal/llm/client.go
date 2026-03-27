@@ -107,27 +107,25 @@ func (c *Client) resolveEndpoint() (string, string) {
 		model = model[idx+1:]
 	}
 
-	// Auto-detect API base based on provider prefix if XALGORIX_API_BASE not set
-	if apiBase == "" {
-		switch provider {
-		case "openai":
-			apiBase = "https://api.openai.com/v1"
-		case "anthropic":
-			apiBase = "https://api.anthropic.com"
-		case "minimax":
-			apiBase = "https://api.minimax.io/v1"
-		case "deepseek":
-			apiBase = "https://api.deepseek.com/v1"
-		case "groq":
-			apiBase = "https://api.groq.com/openai/v1"
-		case "ollama":
-			apiBase = "http://localhost:11434/v1"
-		case "google", "gemini":
-			apiBase = "https://generativelanguage.googleapis.com/v1"
-		default:
-			// No prefix or unknown - default to OpenAI
-			apiBase = "https://api.openai.com/v1"
-		}
+	// Provider prefix in model name is the source of truth for API base.
+	// XALGORIX_API_BASE is only used for unknown/custom providers.
+	providerBases := map[string]string{
+		"openai":    "https://api.openai.com/v1",
+		"anthropic": "https://api.anthropic.com",
+		"minimax":   "https://api.minimax.io/v1",
+		"deepseek":  "https://api.deepseek.com/v1",
+		"groq":      "https://api.groq.com/openai/v1",
+		"ollama":    "http://localhost:11434/v1",
+		"google":    "https://generativelanguage.googleapis.com/v1",
+		"gemini":    "https://generativelanguage.googleapis.com/v1",
+	}
+
+	if knownBase, ok := providerBases[provider]; ok {
+		// Known provider — always use its correct base, ignore XALGORIX_API_BASE
+		apiBase = knownBase
+	} else if apiBase == "" {
+		// Unknown/no provider and no API base set — default to OpenAI
+		apiBase = "https://api.openai.com/v1"
 	}
 
 	apiBase = strings.TrimRight(apiBase, "/")
