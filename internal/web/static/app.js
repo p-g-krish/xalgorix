@@ -781,12 +781,13 @@
         const apiKey = document.getElementById('llm-apikey').value.trim();
         const apiBase = document.getElementById('llm-apibase').value.trim();
 
-        if (modelInput) {
-            const p = LLM_PROVIDERS[provider] || {};
-            payload.model = p.prefix ? `${p.prefix}/${modelInput}` : modelInput;
-            if (!apiBase && p.base) {
-                payload.api_base = p.base;
-            }
+        const p = LLM_PROVIDERS[provider] || {};
+        const effectiveModel = modelInput || p.model || '';
+        if (effectiveModel) {
+            payload.model = p.prefix ? `${p.prefix}/${effectiveModel}` : effectiveModel;
+        }
+        if (!apiBase && p.base) {
+            payload.api_base = p.base;
         }
         if (apiKey) payload.api_key = apiKey;
         if (apiBase) payload.api_base = apiBase;
