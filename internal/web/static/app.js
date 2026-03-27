@@ -781,6 +781,9 @@
         if (modelInput) {
             const p = LLM_PROVIDERS[provider] || {};
             payload.model = p.prefix ? `${p.prefix}/${modelInput}` : modelInput;
+            if (!apiBase && p.base) {
+                payload.api_base = p.base;
+            }
         }
         if (apiKey) payload.api_key = apiKey;
         if (apiBase) payload.api_base = apiBase;

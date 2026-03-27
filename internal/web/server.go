@@ -31,7 +31,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.5.8"
+const version = "3.5.9"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -390,17 +390,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		var req ScanRequest
 		if err := json.Unmarshal(msg, &req); err == nil && len(req.Targets) > 0 {
-			// Apply LLM provider settings from WebSocket message (same as handleScan)
+			// Apply LLM provider settings from WebSocket message securely using a copy
+			scanCfg := *s.cfg // shallow copy
 			if req.Model != "" {
-				s.cfg.LLM = req.Model
+				scanCfg.LLM = req.Model
 			}
 			if req.APIKey != "" {
-				s.cfg.APIKey = req.APIKey
+				scanCfg.APIKey = req.APIKey
 			}
 			if req.APIBase != "" {
-				s.cfg.APIBase = req.APIBase
+				scanCfg.APIBase = req.APIBase
 			}
-			go s.runMultiScan(req)
+			go s.runMultiScan(req, &scanCfg)
 		}
 	}
 }
@@ -422,18 +423,19 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply LLM provider settings from web UI if provided
+	// Apply LLM provider settings from web UI securely using a copy
+	scanCfg := *s.cfg // shallow copy
 	if req.Model != "" {
-		s.cfg.LLM = req.Model
+		scanCfg.LLM = req.Model
 	}
 	if req.APIKey != "" {
-		s.cfg.APIKey = req.APIKey
+		scanCfg.APIKey = req.APIKey
 	}
 	if req.APIBase != "" {
-		s.cfg.APIBase = req.APIBase
+		scanCfg.APIBase = req.APIBase
 	}
 
-	go s.runMultiScan(req)
+	go s.runMultiScan(req, &scanCfg)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
@@ -542,7 +544,7 @@ func sanitizeTarget(target string) string {
 }
 
 // runMultiScan processes targets sequentially, one at a time.
-func (s *Server) runMultiScan(req ScanRequest) {
+func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
 	if s.running {
 		s.broadcast(WSEvent{Type: "error", Content: "A scan is already running"})
 		return
@@ -654,7 +656,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 			})
 
 			// Run discovery phase
-			s.runSingleScan([]string{target}, discoveryInstruction, req.SeverityFilter, true, true)
+			s.runSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, true)
 
 			// Read discovered subdomains from file
 			// Try multiple possible locations and formats
@@ -775,7 +777,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				// Track vulns BEFORE this subdomain scan to only count new ones
 				vulnCountBefore := len(reporting.GetVulnerabilities())
 
-				s.runSingleScan([]string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
+				s.runSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false)
 
 				// Generate PDF for this subdomain if NEW vulnerabilities found
 				allVulns := reporting.GetVulnerabilities()
@@ -828,7 +830,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 				TotalTargets: totalTargets,
 			})
 
-			s.runSingleScan([]string{target}, dastInstruction, req.SeverityFilter, true, true)
+			s.runSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true)
 
 			s.broadcast(WSEvent{
 				Type:         "target_completed",
@@ -852,7 +854,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan([]string{target}, instruction, req.SeverityFilter, true, true)
+		s.runSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -899,7 +901,7 @@ STOP HERE. Do NOT scan vulnerabilities yet. The system will queue each subdomain
 	})
 }
 
-func (s *Server) runSingleScan(targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool) {
+func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool) {
 	// Reset global state from previous scans (skip for wildcard mode to accumulate vulns)
 	if resetState {
 		reporting.ResetVulnerabilities()
@@ -1459,7 +1461,8 @@ func (s *Server) handleQueueResume(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Start resume in background
-	go s.runMultiScan(req)
+	scanCfg := *s.cfg
+	go s.runMultiScan(req, &scanCfg)
 	
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":       "resumed",
