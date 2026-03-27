@@ -43,21 +43,28 @@ type Event struct {
 	TotalTokens int
 }
 
+// toolExecResult holds the result of an async tool execution.
+type toolExecResult struct {
+	Result tools.Result
+	Err    error
+}
+
 // Agent runs the LLM agent loop.
 type Agent struct {
-	ID       string
-	Name     string
-	cfg      *config.Config
-	client   *llm.Client
-	registry *tools.Registry
-	messages []llm.Message
-	msgMu    sync.Mutex
-	events   chan Event
-	maxIter  int
-	stopped  atomic.Bool
-	ctx      context.Context
-	cancel   context.CancelFunc
+	ID           string
+	Name         string
+	cfg          *config.Config
+	client       *llm.Client
+	registry     *tools.Registry
+	messages     []llm.Message
+	msgMu        sync.Mutex
+	events       chan Event
+	maxIter      int
+	stopped      atomic.Bool
+	ctx          context.Context
+	cancel       context.CancelFunc
 	lastActivity time.Time
+	activityMu   sync.Mutex
 }
 
 // NewAgent creates a new agent.
@@ -80,14 +87,14 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 	agentmail.Register(reg)
 
 	a := &Agent{
-		ID:       fmt.Sprintf("agent_%d", time.Now().UnixNano()),
-		Name:     name,
-		cfg:      cfg,
-		client:   llm.NewClient(cfg),
-		registry: reg,
-		events:   events,
-		maxIter:  cfg.MaxIterations,
-		ctx:      context.Background(),
+		ID:           fmt.Sprintf("agent_%d", time.Now().UnixNano()),
+		Name:         name,
+		cfg:          cfg,
+		client:       llm.NewClient(cfg),
+		registry:     reg,
+		events:       events,
+		maxIter:      cfg.MaxIterations,
+		ctx:          context.Background(),
 		lastActivity: time.Now(),
 	}
 
@@ -104,11 +111,24 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 		go func() {
 			defer close(done)
 			for evt := range subEvents {
+				// Forward partial results to sub-agent state
 				if evt.Type == "tool_result" && evt.ToolResult.Output != "" {
-					results.WriteString(fmt.Sprintf("[%s] %s\n", evt.ToolName, truncStr(evt.ToolResult.Output, 200)))
+					partial := fmt.Sprintf("[%s] %s", evt.ToolName, truncStr(evt.ToolResult.Output, 200))
+					results.WriteString(partial + "\n")
+					agentsgraph.AddPartialResult(subAgent.ID, partial)
 				}
 				if evt.Type == "finished" {
 					results.WriteString(fmt.Sprintf("\nCompleted: %s\n", truncStr(evt.Content, 500)))
+				}
+				// Also forward events to parent for UI visibility
+				if a.events != nil {
+					parentEvt := evt
+					parentEvt.AgentID = subAgent.ID
+					select {
+					case a.events <- parentEvt:
+					default:
+						// Channel full, skip
+					}
 				}
 			}
 		}()
@@ -122,50 +142,148 @@ func NewAgent(cfg *config.Config, name string, events chan Event) *Agent {
 }
 
 // stripThink removes <think>...</think> blocks from the response.
-// Many reasoning models (DeepSeek, MiniMax, etc.) wrap chain-of-thought in these tags.
 func stripThink(s string) string {
 	return thinkRegex.ReplaceAllString(s, "")
 }
 
-// startWatchdog starts a background watchdog that monitors for stuck agents.
-// Returns a stop function to call when the agent finishes.
+// touchActivity updates the last activity timestamp (thread-safe).
+func (a *Agent) touchActivity() {
+	a.activityMu.Lock()
+	a.lastActivity = time.Now()
+	a.activityMu.Unlock()
+}
+
+// sinceActivity returns how long since last activity (thread-safe).
+func (a *Agent) sinceActivity() time.Duration {
+	a.activityMu.Lock()
+	defer a.activityMu.Unlock()
+	return time.Since(a.lastActivity)
+}
+
+// startWatchdog starts a smart background watchdog that monitors for truly stuck agents.
+// It checks active processes before declaring the agent stuck.
 func (a *Agent) startWatchdog() func() {
 	stopChan := make(chan struct{})
-	
+
 	go func() {
-		// Check every 2 minutes
-		ticker := time.NewTicker(2 * time.Minute)
+		// Check every 30 seconds for faster detection
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-stopChan:
 				return
 			case <-ticker.C:
-				since := time.Since(a.lastActivity)
-				// If no activity for 10 minutes, emit warning
-				if since > 30*time.Minute {
-					a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ Watchdog: No activity for %v. Still working...", since.Round(time.Minute))})
+				if a.stopped.Load() {
+					return
 				}
-				// If no activity for 30 minutes, force stop
-				if since > 60*time.Minute {
-					a.emit(Event{Type: "error", Content: fmt.Sprintf("⚠️ Watchdog: Agent stuck for %v. Force stopping.", since.Round(time.Minute))})
-					// Set stopped flag — this is checked at the TOP of the agent loop
+
+				idleTime := a.sinceActivity()
+				activeProcs := terminal.ActiveProcessCount()
+				runningAgents := agentsgraph.GetRunningCount()
+				activeCmd, cmdDuration := terminal.GetActiveCommand()
+
+				// If there are active processes or sub-agents, keep the activity alive
+				if activeProcs > 0 || runningAgents > 0 {
+					a.touchActivity()
+
+					// Emit status about what's running (every 2 minutes)
+					if cmdDuration > 2*time.Minute && int(cmdDuration.Seconds())%120 < 30 {
+						statusMsg := fmt.Sprintf("⏳ Active: %d process(es)", activeProcs)
+						if activeCmd != "" {
+							cmdPreview := activeCmd
+							if len(cmdPreview) > 100 {
+								cmdPreview = cmdPreview[:100] + "..."
+							}
+							statusMsg += fmt.Sprintf(" | Running: %s (%s)", cmdPreview, cmdDuration.Round(time.Second))
+						}
+						if runningAgents > 0 {
+							statusMsg += fmt.Sprintf(" | Sub-agents: %d", runningAgents)
+						}
+						a.emit(Event{Type: "message", Content: statusMsg})
+					}
+					continue
+				}
+
+				// No active processes — check actual idle time
+				if idleTime > 5*time.Minute && idleTime <= 10*time.Minute {
+					a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ Watchdog: No activity for %s. No active processes.", idleTime.Round(time.Second))})
+				}
+
+				if idleTime > 10*time.Minute && idleTime <= 15*time.Minute {
+					a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ Watchdog: Idle for %s. Will force-stop at 15 minutes.", idleTime.Round(time.Second))})
+				}
+
+				// Force-stop after 15 minutes of TRUE idle (no processes, no LLM response)
+				if idleTime > 15*time.Minute {
+					a.emit(Event{Type: "error", Content: fmt.Sprintf("⚠️ Watchdog: Agent truly stuck for %s (no active processes, no LLM response). Force stopping.", idleTime.Round(time.Second))})
 					a.stopped.Store(true)
-					// Cancel context to interrupt any blocking HTTP calls
 					if a.cancel != nil {
 						a.cancel()
 					}
-					// Kill all running terminal processes to unblock the agent
 					terminal.KillAllProcesses()
 					return
 				}
 			}
 		}
 	}()
-	
+
 	return func() {
 		close(stopChan)
+	}
+}
+
+// executeToolAsync runs a tool in a goroutine with heartbeat monitoring.
+// It keeps the watchdog alive by updating lastActivity while the tool runs,
+// and streams partial output from long-running terminal commands.
+func (a *Agent) executeToolAsync(toolName string, toolArgs map[string]string) (tools.Result, error) {
+	// Set up streaming callback for terminal commands
+	var lastPartialOutput string
+	terminal.SetStreamCallback(func(partial string) {
+		a.touchActivity()
+		// Only emit if output changed
+		if partial != lastPartialOutput {
+			lastPartialOutput = partial
+			// Trim to last 500 chars for the UI
+			preview := partial
+			if len(preview) > 500 {
+				preview = "..." + preview[len(preview)-500:]
+			}
+			a.emit(Event{
+				Type:    "message",
+				Content: fmt.Sprintf("⏳ [%s] partial output:\n%s", toolName, preview),
+			})
+		}
+	})
+	defer terminal.ClearStreamCallback()
+
+	// Execute in goroutine
+	resultCh := make(chan toolExecResult, 1)
+	go func() {
+		result, err := a.registry.Execute(toolName, toolArgs)
+		resultCh <- toolExecResult{Result: result, Err: err}
+	}()
+
+	// Heartbeat loop while waiting for tool to complete
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case res := <-resultCh:
+			// Tool completed — update activity and return immediately
+			a.touchActivity()
+			return res.Result, res.Err
+
+		case <-heartbeat.C:
+			// Keep watchdog alive while tool is running
+			a.touchActivity()
+
+		case <-a.ctx.Done():
+			// Agent was stopped/cancelled
+			return tools.Result{Error: "Agent stopped during tool execution"}, fmt.Errorf("agent cancelled")
+		}
 	}
 }
 
@@ -174,7 +292,7 @@ func (a *Agent) Run(targets []string, instruction string) {
 	// Start watchdog
 	stopWatchdog := a.startWatchdog()
 	defer stopWatchdog()
-	
+
 	systemPrompt := a.buildSystemPrompt(targets, instruction)
 	a.messages = []llm.Message{
 		{Role: "system", Content: systemPrompt},
@@ -191,13 +309,14 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
-	minIterationsBeforeFinish := 15 // Must do at least 15 iterations before finish is accepted
+	minIterationsBeforeFinish := 15
 	consecutiveErrors := 0
 	emptyResponseCount := 0
+
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
-		// Reset activity watchdog on each iteration
-		a.lastActivity = time.Now()
-		
+		// Reset activity watchdog on each iteration — IMMEDIATELY, no delay
+		a.touchActivity()
+
 		if a.maxIter > 0 {
 			a.emit(Event{Type: "thinking", Content: fmt.Sprintf("Iteration %d/%d", iter+1, a.maxIter), TotalTokens: tokenCount()})
 		} else {
@@ -205,6 +324,9 @@ func (a *Agent) Run(targets []string, instruction string) {
 		}
 
 		response, err := a.client.Chat(a.messages)
+		// Update activity after LLM response
+		a.touchActivity()
+
 		if err != nil {
 			consecutiveErrors++
 			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/5): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
@@ -216,13 +338,12 @@ func (a *Agent) Run(targets []string, instruction string) {
 			time.Sleep(time.Duration(consecutiveErrors*5) * time.Second)
 			continue
 		}
-		consecutiveErrors = 0 // Reset on success
+		consecutiveErrors = 0
 
 		if response == "" {
 			emptyResponseCount++
 			a.emit(Event{Type: "message", Content: fmt.Sprintf("⚠️ LLM returned empty response (%d/3)", emptyResponseCount), TotalTokens: tokenCount()})
 			if emptyResponseCount >= 3 {
-				// Inject a strong nudge to get the agent back on track
 				nudge := "Your last responses were empty. You MUST call a tool NOW. Use terminal_execute to run your next command, or call finish if you are truly done."
 				a.msgMu.Lock()
 				a.messages = append(a.messages, llm.Message{Role: "user", Content: nudge})
@@ -231,12 +352,12 @@ func (a *Agent) Run(targets []string, instruction string) {
 			}
 			continue
 		}
-		emptyResponseCount = 0 // Reset on non-empty
+		emptyResponseCount = 0
 
-		// Strip <think>...</think> blocks for parsing (keep in raw for context)
+		// Strip <think>...</think> blocks for parsing
 		responseClean := stripThink(response)
 
-		// Show the LLM's text (stripped of tool XML and think tags)
+		// Show the LLM's text
 		cleanText := llm.CleanContent(responseClean)
 		cleanText = strings.TrimSpace(cleanText)
 		if cleanText != "" {
@@ -247,14 +368,12 @@ func (a *Agent) Run(targets []string, instruction string) {
 		a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
 		a.msgMu.Unlock()
 
-		// Parse tool calls from the cleaned (think-stripped) response
 		toolCalls := llm.ParseToolCalls(responseClean)
 
 		if len(toolCalls) == 0 {
 			noToolCount++
 
 			if noToolCount >= 3 {
-				// After 3 consecutive responses without tools, nudge harder
 				nudge := `You MUST use tools to interact with the target. Do not just explain — take action NOW.
 
 To execute a command, use:
@@ -268,7 +387,7 @@ To finish the task, use:
 </function>
 
 Call a tool NOW in your next response.`
-			a.msgMu.Lock()
+				a.msgMu.Lock()
 				a.messages = append(a.messages, llm.Message{Role: "user", Content: nudge})
 				a.msgMu.Unlock()
 			} else {
@@ -282,7 +401,7 @@ Call a tool NOW in your next response.`
 			continue
 		}
 
-		noToolCount = 0 // Reset counter on successful tool call
+		noToolCount = 0
 
 		for _, tc := range toolCalls {
 			if a.stopped.Load() {
@@ -295,7 +414,8 @@ Call a tool NOW in your next response.`
 				ToolArgs: tc.Args,
 			})
 
-			result, err := a.registry.Execute(tc.Name, tc.Args)
+			// Execute tool ASYNC with heartbeat monitoring
+			result, err := a.executeToolAsync(tc.Name, tc.Args)
 			if err != nil {
 				result = tools.Result{Error: err.Error()}
 			}
@@ -308,7 +428,6 @@ Call a tool NOW in your next response.`
 			})
 
 			if tc.Name == "finish" || (result.Metadata != nil && result.Metadata["finished"] == true) {
-				// Guard: reject premature finish calls
 				if iter < minIterationsBeforeFinish {
 					rejectMsg := fmt.Sprintf(`⚠️ FINISH REJECTED — You are only on iteration %d/%d minimum.
 
@@ -337,6 +456,7 @@ Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish
 			a.messages = append(a.messages, llm.Message{Role: "user", Content: resultMsg})
 			a.msgMu.Unlock()
 		}
+		// ZERO DELAY — immediately proceed to next iteration
 	}
 
 	a.emit(Event{Type: "finished", Content: "Agent reached maximum iterations", TotalTokens: tokenCount()})
@@ -346,12 +466,10 @@ Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish
 func (a *Agent) Stop() {
 	a.stopped.Store(true)
 
-	// Cancel context to stop any blocking operations
 	if a.cancel != nil {
 		a.cancel()
 	}
 
-	// Kill all running terminal processes
 	terminal.KillAllProcesses()
 }
 
@@ -361,12 +479,10 @@ func (a *Agent) SendMessage(message string) (string, error) {
 		return "", fmt.Errorf("agent not initialized")
 	}
 
-	// Add user message
 	a.msgMu.Lock()
 	a.messages = append(a.messages, llm.Message{Role: "user", Content: message})
 	a.msgMu.Unlock()
 
-	// Get response from LLM
 	a.msgMu.Lock()
 	msgs := make([]llm.Message, len(a.messages))
 	copy(msgs, a.messages)
@@ -377,7 +493,6 @@ func (a *Agent) SendMessage(message string) (string, error) {
 		return "", err
 	}
 
-	// Add assistant response to messages
 	a.msgMu.Lock()
 	a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
 	a.msgMu.Unlock()
@@ -390,11 +505,9 @@ func formatToolResult(toolName string, result tools.Result) string {
 	output := result.Output
 	errorMsg := result.Error
 
-	// Build the message
 	var msg string
 	if errorMsg != "" {
 		msg = fmt.Sprintf("Tool '%s' error: %s\n", toolName, errorMsg)
-		// Add helpful suggestions based on the error
 		msg += getToolSuggestion(toolName, errorMsg)
 	} else if output != "" {
 		msg = fmt.Sprintf("Tool '%s' result:\n%s", toolName, output)
@@ -417,8 +530,8 @@ func getToolSuggestion(toolName, errorMsg string) string {
 		if strings.Contains(lower, "permission denied") || strings.Contains(lower, "access denied") {
 			return "Suggestion: Permission denied. Try running with elevated privileges or use a different method.\n"
 		}
-		if strings.Contains(lower, "timeout") {
-			return "Suggestion: Command timed out. Try with a shorter timeout or break the task into smaller steps.\n"
+		if strings.Contains(lower, "cancelled") || strings.Contains(lower, "canceled") {
+			return "Suggestion: Command was cancelled. The agent may have been stopped or the command was taking too long.\n"
 		}
 		if strings.Contains(lower, "connection") || strings.Contains(lower, "network") {
 			return "Suggestion: Network error. Check the target URL and try again.\n"
@@ -594,6 +707,26 @@ Example — running a command:
 <function=terminal_execute>
 <parameter=command>nmap -sV -sC -T4 -A -p- --open TARGET</parameter>
 </function>
+
+## IMPORTANT: Commands Run Without Timeout
+Commands run until they naturally complete — there is NO timeout. You don't need to worry about commands being killed.
+You will receive partial output from long-running commands so you can see progress.
+
+## Parallel Sub-Agents (HIGHLY RECOMMENDED for speed)
+For long-running tasks, use spawn_agent to run them in PARALLEL (max 3 at once):
+
+<function=spawn_agent>
+<parameter=name>Port Scanner</parameter>
+<parameter=task>Run nmap -sV -sC -T4 -A -p- --open TARGET and report all open ports and services</parameter>
+<parameter=target>TARGET</parameter>
+</function>
+
+Then continue with other work while it runs. Check status with:
+<function=check_agent>
+<parameter=agent_id>the_id_returned</parameter>
+</function>
+
+USE THIS for: nmap full scans, directory brute-forcing, nuclei scans, sqlmap, and other slow tasks.
 
 ## Available Tools
 %s

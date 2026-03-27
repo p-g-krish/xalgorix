@@ -22,12 +22,6 @@
 ### Live Feed & Vulnerabilities
 ![Live Feed](assets/ui-screenshot-2.png)
 
-### Severity Filter & Settings
-![Severity Filter](assets/ui-screenshot-3.png)
-
-### Scan Results
-![Results](assets/ui-screenshot-4.png)
-
 ---
 
 ## 🚀 Xalgorix — The Most Powerful Open-Source AI Pentesting Agent
