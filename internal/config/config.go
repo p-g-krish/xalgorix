@@ -82,7 +82,7 @@ func load() *Config {
 	cwd, _ := os.Getwd()
 	workspace := envOr("XALGORIX_WORKSPACE", cwd)
 
-	return &Config{
+	cfg := &Config{
 		// LLM
 		LLM:             envOr("XALGORIX_LLM", ""),
 		APIBase:         envOr("XALGORIX_API_BASE", ""),
@@ -118,6 +118,17 @@ func load() *Config {
 		HomeDir:   xalgorixHome,
 		SkillsDir: filepath.Join(xalgorixHome, "skills"),
 	}
+
+	// Debug: show loaded config so users can verify correct env was picked up
+	maskedKey := ""
+	if len(cfg.APIKey) > 8 {
+		maskedKey = cfg.APIKey[:4] + "****" + cfg.APIKey[len(cfg.APIKey)-4:]
+	} else if cfg.APIKey != "" {
+		maskedKey = "****"
+	}
+	fmt.Printf("[config] Loaded: LLM=%q APIBase=%q APIKey=%s\n", cfg.LLM, cfg.APIBase, maskedKey)
+
+	return cfg
 }
 
 // ResolveModel resolves a model name.

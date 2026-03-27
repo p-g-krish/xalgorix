@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -267,6 +268,7 @@ func (c *Client) ChatStream(messages []Message) <-chan StreamChunk {
 // doChat performs a single non-streaming API call.
 func (c *Client) doChat(messages []Message) (string, error) {
 	url, model := c.resolveEndpoint()
+	log.Printf("[llm] Request → URL=%s model=%s apiModel=%s cfgLLM=%s cfgAPIBase=%s", url, model, c.apiModel, c.cfg.LLM, c.cfg.APIBase)
 
 	reqBody := chatRequest{
 		Model:    model,
