@@ -72,7 +72,8 @@ Call report_vulnerability with:
 | Self-XSS (only works on own session) | INFO only | Not exploitable against others |
 | phpMyAdmin/admin panel found (with auth) | INFO only | Unless you bypass auth |
 | Default credentials (if not tested) | INFO only | Must actually login |
-| SSL/TLS issues (weak ciphers, old TLS) | INFO only | Not directly exploitable |
+| SSL/TLS issues (weak ciphers, old TLS) | REJECT | Out of scope, do not report |
+| DNS configuration (SPF, DMARC, TXT) | REJECT | Out of scope, do not report |
 | Nuclei template match (no manual verify) | REJECT | Must manually verify |
 | Directory listing (no sensitive files) | INFO only | Unless sensitive data found |
 
@@ -161,6 +162,8 @@ INFO: Detection without exploitation proof, missing headers, version disclosure
 - CORS alone (no cookie theft PoC) = INFO
 - Open redirect alone = INFO
 - Scanner output without manual verification = REJECTED
+- SSL/TLS issues (weak ciphers, old TLS) = REJECTED (Do not report)
+- DNS configuration (SPF, DMARC, TXT) = REJECTED (Do not report)
 
 ## DEDUPLICATION:
 Same endpoint + same vulnerability = skip (already reported)
@@ -230,6 +233,8 @@ Call report_vulnerability with exploitation_proof showing actual output.
 - Version disclosure = INFO unless specific CVE exploited
 - Scanner-only findings without manual verification = REJECTED
 - CORS without cookie theft PoC = INFO
+- SSL/TLS issues (weak ciphers, old TLS) = REJECTED (Do not report)
+- DNS configuration (SPF, DMARC, TXT) = REJECTED (Do not report)
 
 ## DEDUPLICATION:
 Same endpoint + same vulnerability = skip (already reported)
