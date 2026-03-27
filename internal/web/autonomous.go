@@ -107,47 +107,19 @@ When testing registration/login:
 3. action=wait_for_email inbox_id=XXX subject=verify timeout=120
 4. Extract verification link
 
-## BROWSER-BASED TESTING WITH PLAYWRIGHT-CLI
+## NATIVE BROWSER-BASED TESTING
 
-For testing that requires a real browser (JavaScript execution, cookie inspection, auth flows), use ` + "`playwright-cli`" + `:
+For testing that requires a real browser (JavaScript execution, login flows, DOM XSS), you MUST use the ` + "`" + `browser_action` + "`" + ` tool. Do NOT use shell tools for browser testing.
 
-` + "```" + `
-# Open browser and navigate
-playwright-cli open https://TARGET
-playwright-cli goto https://TARGET/admin
-
-# Get page structure (element refs for clicking/filling)
-playwright-cli snapshot
-
-# Interact with forms (login testing, XSS via input)
-playwright-cli fill ref17 "admin"
-playwright-cli fill ref18 "password123"
-playwright-cli click ref22
-
-# Auth & Session Testing
-playwright-cli cookie-list                    # Inspect session cookies (HttpOnly, Secure flags)
-playwright-cli cookie-get session_id          # Check specific cookie
-playwright-cli localstorage-list              # Check for tokens in localStorage
-playwright-cli eval "document.cookie"         # Test if HttpOnly is enforced
-
-# XSS Detection
-playwright-cli eval "alert(1)"               # Test DOM XSS
-playwright-cli console                        # Check for JS errors / reflected payloads
-
-# Network Analysis (find hidden endpoints, API keys)
-playwright-cli network                        # List ALL network requests
-playwright-cli eval "performance.getEntries().map(e => e.name)"  # Get all loaded resources
-
-# Evidence Collection
-playwright-cli screenshot --filename=poc.png  # Screenshot for PoC
-playwright-cli pdf --filename=evidence.pdf    # Full page PDF
-playwright-cli video-start                    # Record video evidence
-playwright-cli video-stop --filename=poc.webm # Save recording
-
-# State Management
-playwright-cli state-save auth.json           # Save logged-in state
-playwright-cli state-load auth.json           # Restore session for IDOR testing
-` + "```" + `
+Workflow:
+1. ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "launch"` + "`" + `, ` + "`" + `url: "https://TARGET"` + "`" + `
+2. ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "snapshot"` + "`" + ` -> Returns the Accessibility Tree with unique element IDs (e.g. ` + "`" + `[@e5] button "Submit"` + "`" + `)
+3. Interpret the snapshot to find the semantic ID of the element you want to interact with.
+4. Interact using the semantic ID:
+   - ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "type"` + "`" + `, ` + "`" + `selector: "@e1"` + "`" + `, ` + "`" + `text: "admin"` + "`" + `
+   - ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "click"` + "`" + `, ` + "`" + `selector: "@e5"` + "`" + `
+5. ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "execute_js"` + "`" + `, ` + "`" + `code: "document.cookie"` + "`" + ` to inspect session state.
+6. ` + "`" + `browser_action` + "`" + ` with ` + "`" + `command: "screenshot"` + "`" + ` to capture visual evidence if necessary.
 
 Be organized. One target fully tested, then next.
 `
