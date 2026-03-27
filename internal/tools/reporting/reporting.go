@@ -228,7 +228,7 @@ func checkFalsePositive(title, description, severity, proof string) string {
 
 	// Pattern 3: Scanner-only findings without manual verification
 	scannerKeywords := []string{"nuclei detected", "nuclei found", "scanner reported", "automated scan found",
-		"wpscan found", "nikto found", "nmap detected"}
+		"wpscan found", "nmap detected"}
 	for _, kw := range scannerKeywords {
 		if strings.Contains(lower, kw) && proof == "" {
 			return "❌ REJECTED: Scanner-only findings require MANUAL VERIFICATION. Run the scanner, then manually exploit the finding to confirm it. Paste the exploitation output as proof."

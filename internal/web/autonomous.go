@@ -18,7 +18,7 @@ You are an elite penetration tester. YOUR GOAL: Find REAL, EXPLOITABLE vulnerabi
 - Save all results in organized folders: mkdir -p ./TARGET
 
 ### Phase 2: VULNERABILITY DETECTION (automated + manual)
-- Run nuclei, nikto, sqlmap --crawl, directory brute-forcing
+- Run nuclei, sqlmap --crawl, directory brute-forcing
 - Analyze JS files for API keys, endpoints, secrets
 - Test for: SQLi, XSS, SSRF, IDOR, RCE, Auth Bypass, File inclusion, Command injection
 

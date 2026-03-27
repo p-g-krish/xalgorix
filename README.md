@@ -22,6 +22,9 @@
 ### Live Feed & Vulnerabilities
 ![Live Feed](assets/ui-screenshot-2.png)
 
+### Vulnerability Details
+![Vulnerability Details](assets/ui-screenshot-3.png)
+
 ---
 
 ## 🚀 Xalgorix — The Most Powerful Open-Source AI Pentesting Agent
@@ -476,7 +479,7 @@ After **5 consecutive failures**, a tool is temporarily blocked for **60 seconds
 | 🔎 URLs | gospider, katana, gau, waybackurls |
 | 🔧 Parameters | paramspider, arjun |
 | 🚀 Ports | nmap |
-| 💥 Vulns | nuclei, nikto, sqlmap, dalfox |
+| 💥 Vulns | nuclei, sqlmap, dalfox |
 | 📁 Fuzzing | gobuster, ffuf |
 | 🖥️ Tech | whatweb, wappalyzer |
 
@@ -485,7 +488,7 @@ After **5 consecutive failures**, a tool is temporarily blocked for **60 seconds
 ## 📋 20-Phase Methodology
 
 1. 🔍 **Recon** — Subdomains, ports, directories
-2. 🦠 **Vuln Scan** — Nuclei, nikto, nmap scripts
+2. 🦠 **Vuln Scan** — Nuclei, nmap scripts
 3. 📂 **Content** — Fuzzing, backups, admin panels
 4. 🔐 **SSL/TLS** — Cipher, certificates, headers
 5. 🔑 **Auth** — SQLi login, brute-force, OAuth

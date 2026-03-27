@@ -142,7 +142,6 @@ var packageMap = map[string]string{
 	// SSL/TLS
 	"openssl": "openssl",
 	// Recon / enumeration
-	"nikto":       "nikto",
 	"dirb":        "dirb",
 	"gobuster":    "gobuster",
 	"ffuf":        "ffuf",
@@ -650,6 +649,8 @@ var blockedPatterns = []struct {
 	// Python destructive
 	{"shutil.rmtree", "recursive directory removal"},
 	{"os.remove", "file deletion"},
+	// Noisy / false-positive-heavy tools
+	{"nikto", "nikto is blocked — too many false positives. Use nuclei or manual testing instead"},
 }
 
 // isBlockedCommand checks if a command matches any blocked pattern.
@@ -814,7 +815,7 @@ func simpleURLDecode(s string) string {
 func extractCommands(cmd string) []string {
 	// Common security tools to look for
 	toolsList := []string{
-		"nmap", "nikto", "sqlmap", "gobuster", "ffuf", "dirb", "curl", "wget",
+		"nmap", "sqlmap", "gobuster", "ffuf", "dirb", "curl", "wget",
 		"nuclei", "httpx", "dnsx", "subfinder", "findomain", "assetfinder",
 		"masscan", "nc", "netcat", "socat", "openssl", "whatweb", "wafw00f",
 		"gospider", "katana", "hakrawler", "gau", "waybackurls", "paramspider",
