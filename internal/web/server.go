@@ -32,7 +32,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.8.0"
+const version = "3.8.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -669,7 +669,7 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 			})
 
 			// Run discovery phase (no report, no state reset — this is just enumeration)
-			s.runSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, false, true)
+			s.safeSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, false, true)
 
 			// Read discovered subdomains from file
 			// Multi-layer fallback to handle agents saving files to different locations
@@ -843,9 +843,15 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 			// PHASE 2: Scan each subdomain individually — SKIP subdomain enumeration (already done in Phase 1)
 			for j, subdomain := range subdomains {
 				if s.stopReq.Load() {
+					log.Printf("[INFO] Subdomain loop stopped by user at %d/%d for %s", j+1, len(subdomains), target)
 					s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
 					break
 				}
+
+				log.Printf("[INFO] Starting subdomain %d/%d: %s (parent: %s)", j+1, len(subdomains), subdomain, target)
+
+				// Clean up any leftover processes from previous subdomain scan
+				terminal.KillAllProcesses()
 
 				// Update queue state
 				s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
@@ -874,7 +880,7 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 				// Track vulns BEFORE this subdomain scan to only count new ones
 				vulnCountBefore := len(reporting.GetVulnerabilities())
 
-				s.runSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
+				s.safeSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
 
 				// Generate PDF for this subdomain if NEW vulnerabilities found
 				allVulns := reporting.GetVulnerabilities()
@@ -910,6 +916,10 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 				})
 			}
 
+			log.Printf("[INFO] Wildcard scan complete for %s: scanned %d subdomains", target, len(subdomains))
+			// Clean up processes before next target
+			terminal.KillAllProcesses()
+
 			continue // Skip the regular scan below since we did wildcard handling above
 		} else if req.ScanMode == "dast" {
 			// DAST mode - autonomous URL vulnerability testing
@@ -927,7 +937,7 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 				TotalTargets: totalTargets,
 			})
 
-			s.runSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true, false)
+			s.safeSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true, false)
 
 			s.broadcast(WSEvent{
 				Type:         "target_completed",
@@ -951,7 +961,7 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 			TotalTargets: totalTargets,
 		})
 
-		s.runSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true, false)
+		s.safeSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true, false)
 
 		s.broadcast(WSEvent{
 			Type:         "target_completed",
@@ -1002,6 +1012,19 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 	// Small delay to ensure WebSocket message is delivered before polling detects state change
 	time.Sleep(500 * time.Millisecond)
 	s.running.Store(false)
+}
+
+// safeSingleScan wraps runSingleScan with panic recovery so a crash in one
+// target/subdomain never aborts the entire multi-target queue.
+func (s *Server) safeSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("⚠️ Scan crashed for %s: %v — continuing to next target", strings.Join(targets, ","), r)
+			log.Printf("[PANIC RECOVERY] %s", errMsg)
+			s.broadcast(WSEvent{Type: "error", Content: errMsg})
+		}
+	}()
+	s.runSingleScan(scanCfg, targets, instruction, severityFilter, resetState, generateReportAtEnd, discoveryMode)
 }
 
 func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
