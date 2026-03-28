@@ -767,7 +767,7 @@ If you cannot exploit it, mark it as INFO in your notes, NOT as a vulnerability.
 
 Example — running a command:
 <function=terminal_execute>
-<parameter=command>nmap -sV -sC -T4 -A -p- --open TARGET</parameter>
+<parameter=command>nmap -sV -sC -T4 --top-ports 1000 --open TARGET</parameter>
 </function>
 
 ## IMPORTANT: Commands Run Without Timeout
@@ -779,7 +779,7 @@ For long-running tasks, use spawn_agent to run them in PARALLEL (max 3 at once):
 
 <function=spawn_agent>
 <parameter=name>Port Scanner</parameter>
-<parameter=task>Run nmap -sV -sC -T4 -A -p- --open TARGET and report all open ports and services</parameter>
+<parameter=task>Run nmap -sV -sC -T4 --top-ports 1000 --open TARGET and report all open ports and services</parameter>
 <parameter=target>TARGET</parameter>
 </function>
 
@@ -924,8 +924,8 @@ cat ./live_hosts.txt | grep -E "^\[.*\]" | cut -d' ' -f1 > ./live_urls.txt
 wc -l ./live_hosts.txt
 
 # Port Scanning - comprehensive
-nmap -sV -sC -T4 -A -p- --open -oN ./nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
-nmap -sU -T4 --top-ports 200 -oN ./nmap_udp.txt TARGET
+nmap -sV -sC -T4 --top-ports 1000 --open -oN ./nmap_full.txt --script=http-title,http-headers,http-methods,http-robots.txt TARGET
+nmap -sU -T4 --top-ports 100 -oN ./nmap_udp.txt TARGET
 
 # Technology fingerprinting
 whatweb -v -a 3 https://TARGET 2>/dev/null

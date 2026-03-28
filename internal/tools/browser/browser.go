@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -69,13 +70,27 @@ func ensureBrowser(proxy string) error {
 
 	path, exists := launcher.LookPath()
 	if !exists {
-		// Manual fallback check for common Linux paths
+		// Fallback 1: Use Go's exec.LookPath which respects $PATH
+		for _, name := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
+			if p, err := exec.LookPath(name); err == nil {
+				path = p
+				exists = true
+				break
+			}
+		}
+	}
+	if !exists {
+		// Fallback 2: Check common Linux paths directly
 		fallbacks := []string{
 			"/usr/bin/chromium",
 			"/usr/bin/google-chrome",
 			"/usr/bin/chromium-browser",
 			"/usr/bin/google-chrome-stable",
 			"/snap/bin/chromium",
+			"/usr/lib/chromium/chromium",
+			"/usr/lib/chromium-browser/chromium-browser",
+			"/opt/google/chrome/google-chrome",
+			"/usr/local/bin/chromium",
 		}
 		for _, p := range fallbacks {
 			if _, err := os.Stat(p); err == nil {
@@ -85,9 +100,24 @@ func ensureBrowser(proxy string) error {
 			}
 		}
 	}
-
 	if !exists {
-		return fmt.Errorf("Chromium/Chrome not found. Install with: sudo apt install chromium")
+		// Fallback 3: Try to auto-install chromium
+		installCmd := exec.Command("bash", "-c", "apt-get install -y -q chromium 2>&1 || apt-get install -y -q chromium-browser 2>&1")
+		if out, err := installCmd.CombinedOutput(); err == nil {
+			// Retry detection after install
+			for _, name := range []string{"chromium", "chromium-browser"} {
+				if p, err := exec.LookPath(name); err == nil {
+					path = p
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				return fmt.Errorf("Chromium installed but not found in PATH. Install output: %s", string(out))
+			}
+		} else {
+			return fmt.Errorf("Chromium/Chrome not found and auto-install failed. Install manually with: sudo apt install chromium")
+		}
 	}
 
 	ln := launcher.New().
