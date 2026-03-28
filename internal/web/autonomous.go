@@ -17,10 +17,11 @@ You are an elite penetration tester. YOUR GOAL: Find REAL, EXPLOITABLE vulnerabi
 - Subdomain enumeration, port scanning, technology fingerprinting, URL crawling, parameter discovery
 - Save all results in organized folders: mkdir -p ./TARGET
 
-### Phase 2: VULNERABILITY DETECTION (automated + manual)
-- Run nuclei, sqlmap --crawl, directory brute-forcing
+### Phase 2: MANUAL VULNERABILITY TESTING (understand the target first)
+- For EACH endpoint with parameters: send baseline request, test special characters, check reflections
+- Manually test: SQLi (curl with single quote, check errors/timing), XSS (check if input reflected unencoded), SSRF, IDOR, path traversal
 - Analyze JS files for API keys, endpoints, secrets
-- Test for: SQLi, XSS, SSRF, IDOR, RCE, Auth Bypass, File inclusion, Command injection
+- Use automated scanners (nuclei) ONLY as a supplement AFTER manual testing — treat scanner results as leads to verify manually
 
 ### Phase 3: EXPLOITATION & VERIFICATION (MANDATORY before reporting)
 For EVERY potential vulnerability found in Phase 2, you MUST:
@@ -180,8 +181,9 @@ If you can't exploit it, report as INFO or don't report at all.
 
 // buildSubdomainScanInstruction builds an instruction for scanning a single subdomain
 // that was already discovered in Phase 1. Skips subdomain enumeration completely.
+// Includes fingerprint-first deduplication for handling thousands of similar subdomains.
 func buildSubdomainScanInstruction(subdomain, parentDomain, customInstruction string) string {
-	baseInstruction := `## SUBDOMAIN VULNERABILITY SCAN — EXPLOIT-FIRST
+	baseInstruction := `## SUBDOMAIN VULNERABILITY SCAN — SMART & EFFICIENT
 
 You are an elite penetration tester. YOUR GOAL: Find REAL, EXPLOITABLE vulnerabilities with PROOF.
 
@@ -195,36 +197,81 @@ This subdomain was already discovered during Phase 1. You MUST NOT:
 
 Focus ONLY on vulnerability testing of this specific host: ` + subdomain + `
 
+## STEP 0: FINGERPRINT & DEDUPLICATION (MANDATORY FIRST STEP)
+
+Before doing ANY testing, you MUST determine what this subdomain actually hosts.
+Many subdomains (especially in large organizations) serve identical content — parking pages,
+default panels, redirects to the main site, or CDN mirrors. Do NOT waste time on duplicates.
+
+` + "`" + `bash` + "`" + `
+# Quick fingerprint — run ALL of these FIRST
+echo "=== FINGERPRINT: ` + subdomain + ` ==="
+
+# 1. Check if host resolves and responds
+curl -sI -m 10 --connect-timeout 5 https://` + subdomain + ` 2>/dev/null | head -20
+HTTP_CODE=$(curl -so /dev/null -w '%{http_code}' -m 10 https://` + subdomain + ` 2>/dev/null)
+echo "HTTP Status: $HTTP_CODE"
+
+# 2. Get page title and content hash (for dedup)
+TITLE=$(curl -sk -m 10 https://` + subdomain + ` 2>/dev/null | grep -oP '(?<=<title>)[^<]+' | head -1)
+echo "Title: $TITLE"
+
+BODY_HASH=$(curl -sk -m 10 https://` + subdomain + ` 2>/dev/null | md5sum | cut -d' ' -f1)
+echo "Content Hash: $BODY_HASH"
+
+BODY_SIZE=$(curl -sk -m 10 https://` + subdomain + ` 2>/dev/null | wc -c)
+echo "Content Size: $BODY_SIZE bytes"
+
+# 3. Check if it just redirects to main domain
+REDIRECT=$(curl -sk -m 10 -o /dev/null -w '%{redirect_url}' https://` + subdomain + ` 2>/dev/null)
+echo "Redirect: $REDIRECT"
+` + "`" + `
+
+### DECISION AFTER FINGERPRINT:
+
+**SKIP (call finish immediately) if ANY of these are true:**
+- HTTP status is 000 (host doesn't respond / timeout)
+- HTTP status is 403/404 and page is a generic error page
+- Page title is a parking/default page: "Domain Parking", "Coming Soon", "Under Construction", "Default Page", "Welcome to nginx", "Apache2 Default Page", "IIS Windows Server"  
+- Redirect goes to the MAIN domain (` + parentDomain + `) — same content, no point scanning twice
+- Content hash matches a previously scanned subdomain (note this in your findings)
+- Body size is 0 or very small (< 500 bytes) with no meaningful content
+
+If you determine this is a duplicate/parking/redirect subdomain, call finish with a note like:
+"Subdomain ` + subdomain + ` is a [parking page / redirect to main domain / identical to X]. No unique attack surface."
+
+**CONTINUE TESTING if:**
+- The subdomain has unique content (different title/hash from others)
+- It runs a different application or technology stack
+- It has a login page, API, admin panel, or unique functionality
+- It returns a different HTTP status or content than the parent domain
+
 ## CORE RULE: DETECT → EXPLOIT → REPORT
 ⚠️ NEVER report a vulnerability you haven't exploited. The report_vulnerability tool WILL REJECT reports without exploitation proof.
 
-## YOUR WORKFLOW (skip recon, go straight to testing):
+## YOUR WORKFLOW (after passing fingerprint check):
 
-### Step 1: FINGERPRINT THIS HOST
+### Step 1: QUICK TECH FINGERPRINT
 - whatweb ` + subdomain + ` — identify technologies
-- nmap -sV -sC --top-ports 1000 ` + subdomain + ` — find open ports + services
-- curl -sI https://` + subdomain + ` — check response headers
+- nmap -sV --top-ports 100 ` + subdomain + ` — find open ports (keep it fast)
+- curl -sI https://` + subdomain + ` — check headers
 
-### Step 2: DISCOVER CONTENT
+### Step 2: DISCOVER CONTENT  
 - ffuf/gobuster directory brute-forcing on this host
-- Crawl with gospider/katana for URLs and parameters
+- Crawl with katana/gospider for URLs and parameters
 - Check for robots.txt, sitemap.xml, .git exposure
 
-### Step 3: VULNERABILITY TESTING
-- Test all discovered parameters for SQLi, XSS, SSRF, IDOR
-- Run nuclei against this host
+### Step 3: MANUAL VULNERABILITY TESTING
+- Test all discovered parameters MANUALLY first (curl with special chars, check reflections, test timing)
+- Only AFTER understanding how params are processed, consider using nuclei as a supplement
 - Analyze JavaScript files for API keys, endpoints, secrets
-- Test authentication/authorization if login exists
 
 ### Step 4: EXPLOITATION & VERIFICATION (MANDATORY)
 For EVERY potential vulnerability:
-
-**SQL Injection:** Confirm with time-based or extract data with sqlmap
-**XSS:** Show reflected payload in response (curl + grep)
-**SSRF:** Get callback or read internal metadata
-**RCE:** Execute id/whoami and show output
-**IDOR:** Access other user's data
-**Auth Bypass:** Access protected endpoint without credentials
+- SQLi: Confirm with time-based or extract data
+- XSS: Show reflected payload in response (curl + grep)
+- SSRF: Get callback or read internal metadata
+- RCE: Execute id/whoami and show output
 
 ### Step 5: REPORT (only after exploitation)
 Call report_vulnerability with exploitation_proof showing actual output.
@@ -233,27 +280,18 @@ Call report_vulnerability with exploitation_proof showing actual output.
 - Missing headers = INFO only
 - Version disclosure = INFO unless specific CVE exploited
 - Scanner-only findings without manual verification = REJECTED
-- CORS without cookie theft PoC = INFO
-- SSL/TLS issues (weak ciphers, old TLS) = REJECTED (Do not report)
-- DNS configuration (SPF, DMARC, TXT) = REJECTED (Do not report)
-
-## DEDUPLICATION:
-Same endpoint + same vulnerability = skip (already reported)
+- SSL/TLS issues = REJECTED (Do not report)
+- DNS configuration = REJECTED (Do not report)
 
 ## SAFE EXPLOITATION RULES:
 - NEVER delete data, drop tables, or modify production state
-- Use READ-ONLY exploitation: SELECT queries, file reads, metadata access
-- Time-based tests are safe (SLEEP, pg_sleep, WAITFOR DELAY)
+- Use READ-ONLY exploitation only
+- Time-based tests are safe
 
-## UNIVERSAL EMAIL USAGE (STRICT REQUIREMENT)
-Whenever you need an email address for ANY test (SMTP Open Relay, form submissions, sign-ups, XSS/SSRF payloads, or contact forms):
-1. NEVER use random, fake, or external emails like test@gmail.com or admin@target.com.
-2. ALWAYS use the agentmail tool to generate a unique test email address:
-   - action=create_inbox name=smtp_test1
-   - Use the generated email in your payloads.
-   - Monitor the box using action=wait_for_email.
+## UNIVERSAL EMAIL USAGE
+When you need email for any test, use the agentmail tool — NEVER use random/fake emails.
 
-Be thorough but focused. Test this specific subdomain completely, then finish.
+Be efficient. If this subdomain is a duplicate or uninteresting, finish fast and move on.
 `
 
 	if customInstruction != "" {

