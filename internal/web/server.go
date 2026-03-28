@@ -32,7 +32,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.7.1"
+const version = "3.7.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -672,80 +672,164 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 			s.runSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, false, true)
 
 			// Read discovered subdomains from file
-			// Try multiple possible locations and formats
+			// Multi-layer fallback to handle agents saving files to different locations
 			var subdomains []string
-			possibleFiles := []string{
-				filepath.Join(s.currentScanDir, "live_subdomains.txt"),
-				filepath.Join(s.currentScanDir, "live_resolved.txt"),
-				filepath.Join(s.currentScanDir, "all_discovered_subdomains.txt"),
+			seen := make(map[string]bool) // dedup
+
+			// Helper: extract valid subdomains from a file
+			extractFromFile := func(path string) []string {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return nil
+				}
+				var found []string
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
+					if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "Total") || strings.HasPrefix(line, "wc") {
+						continue
+					}
+					// Strip protocol prefixes
+					line = strings.TrimPrefix(line, "http://")
+					line = strings.TrimPrefix(line, "https://")
+					line = strings.TrimPrefix(line, "http[s]://")
+					// Extract domain from common formats: "sub.domain.com" or "sub.domain.com [1.2.3.4]"
+					parts := strings.Fields(line)
+					if len(parts) > 0 {
+						domain := strings.TrimRight(parts[0], "/.,;:")
+						// Must look like a domain (contains dot, has the parent target)
+						if strings.Contains(domain, ".") && !seen[domain] {
+							seen[domain] = true
+							found = append(found, domain)
+						}
+					}
+				}
+				return found
+			}
+
+			// Helper: extract subdomains from a text blob (e.g., agent notes)
+			extractFromText := func(text string) []string {
+				var found []string
+				for _, line := range strings.Split(text, "\n") {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+					line = strings.TrimPrefix(line, "- ")
+					line = strings.TrimPrefix(line, "* ")
+					line = strings.TrimPrefix(line, "http://")
+					line = strings.TrimPrefix(line, "https://")
+					parts := strings.Fields(line)
+					if len(parts) > 0 {
+						domain := strings.TrimRight(parts[0], "/.,;:")
+						if strings.Contains(domain, ".") && strings.Contains(domain, target) && !seen[domain] {
+							seen[domain] = true
+							found = append(found, domain)
+						}
+					}
+				}
+				return found
+			}
+
+			subdomainFileNames := []string{
+				"live_subdomains.txt", "live_resolved.txt", "all_subdomains.txt",
+				"all_discovered_subdomains.txt", "subdomains.txt", "live_hosts.txt",
+				"passive_subfinder.txt", "passive_subfinder2.txt", "active_subfinder.txt",
 			}
 
 			log.Printf("[DEBUG] Looking for subdomains in: %s", s.currentScanDir)
-			
-			for _, subdomainsFile := range possibleFiles {
-				log.Printf("[DEBUG] Checking file: %s", subdomainsFile)
-				subdomainsData, err := os.ReadFile(subdomainsFile)
-				if err == nil {
-					for _, line := range strings.Split(string(subdomainsData), "\n") {
-						line = strings.TrimSpace(line)
-						if line == "" || strings.HasPrefix(line, "#") {
-							continue
-						}
-						// Remove any protocol prefix
-						line = strings.TrimPrefix(line, "http://")
-						line = strings.TrimPrefix(line, "https://")
-						line = strings.TrimPrefix(line, "http[s]://")
-						// Extract domain from common formats: "domain.com" or "domain.com [IP]"
-						parts := strings.Fields(line)
-						if len(parts) > 0 && strings.Contains(parts[0], ".") {
-							subdomains = append(subdomains, parts[0])
-						}
-					}
-					log.Printf("[DEBUG] Found %d subdomains in %s", len(subdomains), subdomainsFile)
-					if len(subdomains) > 0 {
+
+			// Layer 1: Check exact files in scan directory
+			for _, name := range subdomainFileNames {
+				path := filepath.Join(s.currentScanDir, name)
+				if found := extractFromFile(path); len(found) > 0 {
+					subdomains = append(subdomains, found...)
+					log.Printf("[DEBUG] Layer 1: Found %d subdomains in %s", len(found), path)
+					// For live_subdomains.txt or live_resolved.txt, these are the best source — stop
+					if name == "live_subdomains.txt" || name == "live_resolved.txt" {
 						break
 					}
 				}
 			}
 
-			// Also try reading from subdirectories (agent may have created them)
+			// Layer 2: Walk scan directory tree for any matching files
 			if len(subdomains) == 0 {
-				subdomainFileNames := []string{"live_subdomains.txt", "live_resolved.txt", "all_subdomains.txt", "all_discovered_subdomains.txt"}
 				filepath.WalkDir(s.currentScanDir, func(path string, d fs.DirEntry, err error) error {
-					if err != nil || d.IsDir() || len(subdomains) > 0 {
+					if err != nil || d.IsDir() {
 						return nil
 					}
 					base := filepath.Base(path)
 					for _, name := range subdomainFileNames {
 						if base == name {
-							log.Printf("[DEBUG] Found subdomain file in subdir: %s", path)
-							data, readErr := os.ReadFile(path)
-							if readErr != nil {
+							if found := extractFromFile(path); len(found) > 0 {
+								subdomains = append(subdomains, found...)
+								log.Printf("[DEBUG] Layer 2: Found %d subdomains in %s", len(found), path)
 								return nil
 							}
-							for _, line := range strings.Split(string(data), "\n") {
-								line = strings.TrimSpace(line)
-								if line == "" || strings.HasPrefix(line, "#") {
-									continue
-								}
-								line = strings.TrimPrefix(line, "http://")
-								line = strings.TrimPrefix(line, "https://")
-								parts := strings.Fields(line)
-								if len(parts) > 0 && strings.Contains(parts[0], ".") {
-									subdomains = append(subdomains, parts[0])
-								}
-							}
-							log.Printf("[DEBUG] Found %d subdomains in subdir file %s", len(subdomains), path)
-							return nil
 						}
 					}
 					return nil
 				})
 			}
 
-			// Last resort: try reading from agent notes
+			// Layer 3: Check /tmp/ for subdomain files (agents sometimes save here)
 			if len(subdomains) == 0 {
-				log.Printf("[WARN] No subdomain files found in %s or subdirectories. Agent may not have saved results to files.", s.currentScanDir)
+				for _, name := range subdomainFileNames {
+					path := filepath.Join("/tmp", name)
+					if found := extractFromFile(path); len(found) > 0 {
+						subdomains = append(subdomains, found...)
+						log.Printf("[DEBUG] Layer 3: Found %d subdomains in %s", len(found), path)
+						break
+					}
+				}
+				// Also check /tmp/ for any file containing the target name
+				if len(subdomains) == 0 {
+					tmpEntries, _ := os.ReadDir("/tmp")
+					for _, e := range tmpEntries {
+						if e.IsDir() {
+							continue
+						}
+						name := e.Name()
+						if (strings.Contains(name, "subdomain") || strings.Contains(name, "live") || strings.Contains(name, target)) && strings.HasSuffix(name, ".txt") {
+							path := filepath.Join("/tmp", name)
+							if found := extractFromFile(path); len(found) > 0 {
+								subdomains = append(subdomains, found...)
+								log.Printf("[DEBUG] Layer 3b: Found %d subdomains in %s", len(found), path)
+								break
+							}
+						}
+					}
+				}
+			}
+
+			// Layer 4: Parse agent notes for subdomain data
+			if len(subdomains) == 0 {
+				allNotes := notes.GetAllNotes()
+				for key, value := range allNotes {
+					lowerKey := strings.ToLower(key)
+					if strings.Contains(lowerKey, "subdomain") || strings.Contains(lowerKey, "live") || strings.Contains(lowerKey, "discovered") || strings.Contains(lowerKey, "domain") {
+						if found := extractFromText(value); len(found) > 0 {
+							subdomains = append(subdomains, found...)
+							log.Printf("[DEBUG] Layer 4: Found %d subdomains in note '%s'", len(found), key)
+						}
+					}
+				}
+				// If still nothing, try ALL notes
+				if len(subdomains) == 0 {
+					for _, value := range allNotes {
+						if found := extractFromText(value); len(found) > 0 {
+							subdomains = append(subdomains, found...)
+						}
+					}
+					if len(subdomains) > 0 {
+						log.Printf("[DEBUG] Layer 4b: Extracted %d subdomains from general notes", len(subdomains))
+					}
+				}
+			}
+
+			if len(subdomains) == 0 {
+				log.Printf("[WARN] No subdomains found after all 4 fallback layers for target: %s", target)
+			} else {
+				log.Printf("[INFO] Total subdomains found for %s: %d", target, len(subdomains))
 			}
 
 			s.broadcast(WSEvent{

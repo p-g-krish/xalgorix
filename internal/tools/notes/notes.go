@@ -78,3 +78,14 @@ func readNotes(args map[string]string) (tools.Result, error) {
 	}
 	return tools.Result{Output: b.String()}, nil
 }
+
+// GetAllNotes returns all notes as a map (for server-side access).
+func GetAllNotes() map[string]string {
+	mu.RLock()
+	defer mu.RUnlock()
+	result := make(map[string]string, len(store))
+	for k, v := range store {
+		result[k] = v
+	}
+	return result
+}
