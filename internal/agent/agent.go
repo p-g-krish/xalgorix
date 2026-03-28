@@ -324,9 +324,10 @@ func (a *Agent) Run(targets []string, instruction string) {
 		return total
 	}
 
-	minIterationsBeforeFinish := 15
+	minIterationsBeforeFinish := 35
 	consecutiveErrors := 0
 	emptyResponseCount := 0
+	finishAttempts := 0 // Track how many times LLM tried to finish
 
 	for iter := 0; (a.maxIter == 0 || iter < a.maxIter) && !a.stopped.Load() && (a.ctx == nil || a.ctx.Err() == nil); iter++ {
 		// Reset activity watchdog on each iteration — IMMEDIATELY, no delay
@@ -344,16 +345,16 @@ func (a *Agent) Run(targets []string, instruction string) {
 
 		if err != nil {
 			consecutiveErrors++
-			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/8): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
-			if consecutiveErrors >= 8 {
+			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/12): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
+			if consecutiveErrors >= 12 {
 				a.emit(Event{Type: "error", Content: fmt.Sprintf("⛔ Agent stopped: LLM failed %d consecutive times. Last error: %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
 				a.emit(Event{Type: "finished", Content: fmt.Sprintf("Agent stopped: LLM failed %d consecutive times. Last error: %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
 				return
 			}
-			// Exponential backoff: 5s, 10s, 15s, 20s, 25s, 30s, 35s, 40s
+			// Exponential backoff: 5s, 10s, 15s... capped at 60s
 			backoff := time.Duration(consecutiveErrors*5) * time.Second
-			if backoff > 40*time.Second {
-				backoff = 40 * time.Second
+			if backoff > 60*time.Second {
+				backoff = 60 * time.Second
 			}
 			time.Sleep(backoff)
 			continue
@@ -448,6 +449,7 @@ Call a tool NOW in your next response.`
 			})
 
 			if tc.Name == "finish" || (result.Metadata != nil && result.Metadata["finished"] == true) {
+				finishAttempts++
 				if !a.discoveryMode && iter < minIterationsBeforeFinish {
 					rejectMsg := fmt.Sprintf(`⚠️ FINISH REJECTED — You are only on iteration %d/%d minimum.
 
@@ -464,6 +466,24 @@ Continue with the NEXT PHASE of testing NOW.`, iter+1, minIterationsBeforeFinish
 					a.emit(Event{Type: "tool_result", ToolName: "finish", ToolResult: tools.Result{Output: rejectMsg}, TotalTokens: tokenCount()})
 					a.msgMu.Lock()
 					a.messages = append(a.messages, llm.Message{Role: "user", Content: rejectMsg})
+					a.msgMu.Unlock()
+					continue
+				}
+				// Allow finish if past minimum, but nudge on first attempt when < 50 iterations
+				if !a.discoveryMode && finishAttempts == 1 && iter < 50 {
+					nudgeMsg := `⚠️ Are you SURE you want to finish? You still have capacity to test more.
+
+Before finishing, verify you have covered:
+- All discovered endpoints and parameters
+- Common vulnerability classes (SQLi, XSS, SSRF, IDOR, broken auth)
+- Technology-specific CVEs
+- API endpoints found in JavaScript files
+- Authentication bypass attempts
+
+If you have truly covered everything, call finish again. Otherwise, continue testing.`
+					a.emit(Event{Type: "tool_result", ToolName: "finish", ToolResult: tools.Result{Output: nudgeMsg}, TotalTokens: tokenCount()})
+					a.msgMu.Lock()
+					a.messages = append(a.messages, llm.Message{Role: "user", Content: nudgeMsg})
 					a.msgMu.Unlock()
 					continue
 				}
@@ -581,28 +601,27 @@ func (a *Agent) pruneMessages() {
 	a.msgMu.Lock()
 	defer a.msgMu.Unlock()
 
-	const maxMessages = 80
-	const maxOldMsgLen = 500
+	const maxMessages = 100
 
 	if len(a.messages) <= maxMessages {
 		return
 	}
 
 	// Keep system prompt (index 0) + the most recent keepRecent messages
-	keepRecent := 40
+	keepRecent := 60
 	if keepRecent > len(a.messages)-1 {
 		keepRecent = len(a.messages) - 1
 	}
 
-	// Build pruned list: system prompt + trimmed old messages + recent messages
+	// Build pruned list: system prompt + continuation marker + recent messages
 	cutoff := len(a.messages) - keepRecent
 	pruned := make([]llm.Message, 0, keepRecent+2)
 	pruned = append(pruned, a.messages[0]) // system prompt
 
-	// Add a summary marker so the LLM knows context was pruned
+	// Add a strong continuation instruction so the LLM knows context was pruned
 	pruned = append(pruned, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("[CONTEXT PRUNED: %d older messages were trimmed to save context space. Continue from where you left off.]", cutoff-1),
+		Content: fmt.Sprintf("[CONTEXT PRUNED: %d older messages were trimmed to save context space. You are still in the MIDDLE of your scan. DO NOT call finish — continue testing from where you left off. Review recon data and proceed with the next testing phase.]", cutoff-1),
 	})
 
 	// Keep recent messages intact

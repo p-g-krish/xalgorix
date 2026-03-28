@@ -60,7 +60,7 @@ func NewClient(cfg *config.Config) *Client {
 	apiModel, _ := cfg.ResolveModel()
 	return &Client{
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 5 * time.Minute},
+		httpClient: &http.Client{Timeout: 10 * time.Minute},
 		apiModel:   apiModel,
 		ctx:        context.Background(), // default context, overridden by SetContext
 	}
