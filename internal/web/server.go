@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -31,7 +32,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.6.6"
+const version = "3.7.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -244,8 +245,8 @@ type Server struct {
 	clients        map[*websocket.Conn]bool
 	mu             sync.RWMutex
 	agent          *agent.Agent
-	running        bool
-	stopReq        bool
+	running        atomic.Bool
+	stopReq        atomic.Bool
 	dataDir        string
 	currentScanDir string
 	discordWebhook string
@@ -442,14 +443,16 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
-	s.stopReq = true
+	s.stopReq.Store(true)
 	s.mu.Lock()
 	agnt := s.agent
 	s.mu.Unlock()
 	if agnt != nil {
 		agnt.Stop()
 	}
-	s.running = false
+	// Do NOT set s.running = false here — let the runMultiScan goroutine
+	// handle its own cleanup to avoid a race where a new scan starts
+	// before the old goroutine has fully exited.
 	s.broadcast(WSEvent{Type: "stopped", Content: "Agent stopped by user"})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
@@ -462,7 +465,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		scanID = filepath.Base(s.currentScanDir)
 	}
 	json.NewEncoder(w).Encode(map[string]any{
-		"running": s.running,
+		"running": s.running.Load(),
 		"scan_id": scanID,
 		"vulns":   len(reporting.GetVulnerabilities()),
 	})
@@ -548,15 +551,15 @@ func sanitizeTarget(target string) string {
 
 // runMultiScan processes targets sequentially, one at a time.
 func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
-	if s.running {
+	if s.running.Load() {
 		s.broadcast(WSEvent{Type: "error", Content: "A scan is already running"})
 		return
 	}
 
 	// Clear any previous queue state
 	s.clearQueueState()
-	s.running = true
-	s.stopReq = false
+	s.running.Store(true)
+	s.stopReq.Store(false)
 	if req.DiscordWebhook != "" {
 		s.discordWebhook = req.DiscordWebhook
 	}
@@ -575,7 +578,7 @@ func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
 	s.sendDiscord(0x00ff88, "🚀 Scan Started", fmt.Sprintf("**Targets:** %s\n**Mode:** %s\n**Total:** %d target(s)", strings.Join(req.Targets, ", "), req.ScanMode, totalTargets))
 
 	for i, target := range req.Targets {
-		if s.stopReq {
+		if s.stopReq.Load() {
 			s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
 			break
 		}
@@ -755,7 +758,7 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 
 			// PHASE 2: Scan each subdomain individually — SKIP subdomain enumeration (already done in Phase 1)
 			for j, subdomain := range subdomains {
-				if s.stopReq {
+				if s.stopReq.Load() {
 					s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
 					break
 				}
@@ -877,7 +880,6 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 
 	// Clear queue state when done
 	s.clearQueueState()
-	s.running = false
 
 	// Discord: scan finished
 	vulns := reporting.GetVulnerabilities()
@@ -905,10 +907,17 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** 0 found\n**Completed at:** %s", totalTargets, time.Now().Format("15:04:05 MST")))
 	}
 
+	// Broadcast queue_finished BEFORE setting s.running = false
+	// This prevents the polling fallback from detecting scan completion
+	// and reloading the page before the client receives the event.
 	s.broadcast(WSEvent{
 		Type:    "queue_finished",
 		Content: fmt.Sprintf("All %d target(s) completed", totalTargets),
 	})
+
+	// Small delay to ensure WebSocket message is delivered before polling detects state change
+	time.Sleep(500 * time.Millisecond)
+	s.running.Store(false)
 }
 
 func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
@@ -1456,7 +1465,7 @@ func (s *Server) handleQueueStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQueueResume(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	
-	if s.running {
+	if s.running.Load() {
 		json.NewEncoder(w).Encode(map[string]string{"error": "A scan is already running"})
 		return
 	}
@@ -1634,10 +1643,13 @@ func (s *Server) sendDiscordWithFile(color int, title, description, filePath str
 	part.Write(fileData)
 	writer.Close()
 
+	// Capture content type before goroutine to avoid fragile writer capture
+	contentType := writer.FormDataContentType()
+
 	// Send request
 	go func() {
 		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Post(s.discordWebhook, writer.FormDataContentType(), &b)
+		resp, err := client.Post(s.discordWebhook, contentType, &b)
 		if err != nil {
 			log.Printf("Discord webhook file upload error: %v", err)
 			return

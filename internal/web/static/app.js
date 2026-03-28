@@ -1123,11 +1123,26 @@
             const resp = await fetch('/api/status');
             const status = await resp.json();
             if (status.running && !scanRunning) {
-                // Scan started while we were disconnected - reload page
-                location.reload();
+                // Scan started while we were disconnected - load it gracefully
+                scanRunning = true;
+                toggleButtons(true);
+                setStatus('running', 'SCANNING');
+                startTimer();
+                await loadLastScan();
             } else if (!status.running && scanRunning) {
-                // Scan finished while we were disconnected - reload to show results
-                location.reload();
+                // Scan finished while we were disconnected - update UI gracefully
+                // Do NOT reload the page — that wipes the live feed!
+                scanRunning = false;
+                setStatus('finished', 'COMPLETED');
+                stopTimer();
+                toggleButtons(false);
+                hideQueueBar();
+                // Add a completion banner if one doesn't already exist
+                const feed = document.getElementById('feed-body');
+                const hasFinished = feed.querySelector('.event-finished');
+                if (!hasFinished) {
+                    addFeedItem(renderBanner('🏁', 'Scan completed (recovered from connection loss)', 'success'));
+                }
             }
         } catch (e) {}
     }, 5000);

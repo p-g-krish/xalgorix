@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xalgord/xalgorix/internal/tools"
@@ -54,7 +55,10 @@ type Vulnerability struct {
 	AgentName          string  `json:"agent_name"`
 }
 
-var vulnerabilities []Vulnerability
+var (
+	vulnerabilities []Vulnerability
+	vulnMu          sync.RWMutex
+)
 
 // Register adds reporting tools to the registry.
 func Register(r *tools.Registry) {
@@ -128,13 +132,15 @@ If you cannot exploit it, downgrade severity to 'info' and report as information
 	endpoint := strings.TrimSpace(args["endpoint"])
 	vulnType := extractVulnType(title, args["description"])
 	normalizedEndpoint := normalizeEndpoint(endpoint)
-	
+
+	vulnMu.RLock()
 	for _, existing := range vulnerabilities {
 		existingType := extractVulnType(existing.Title, existing.Description)
 		existingNormEndpoint := normalizeEndpoint(existing.Endpoint)
 		
 		// Check 1: Exact title + endpoint match
 		if strings.EqualFold(existing.Title, title) && existing.Endpoint == endpoint {
+			vulnMu.RUnlock()
 			return tools.Result{
 				Output: fmt.Sprintf("⚠️ DUPLICATE: '%s' at endpoint '%s' already reported as %s. Skipping.", title, endpoint, existing.ID),
 			}, nil
@@ -142,12 +148,14 @@ If you cannot exploit it, downgrade severity to 'info' and report as information
 		
 		// Check 2: Same vulnerability TYPE on same normalized endpoint
 		if vulnType != "" && vulnType == existingType && normalizedEndpoint == existingNormEndpoint && normalizedEndpoint != "" {
+			vulnMu.RUnlock()
 			return tools.Result{
 				Output: fmt.Sprintf("⚠️ DUPLICATE: Same vulnerability type '%s' already reported on endpoint '%s' as %s ('%s'). Skipping.\nIf this is genuinely different, use a distinct endpoint or describe how it differs.",
 					vulnType, endpoint, existing.ID, existing.Title),
 			}, nil
 		}
 	}
+	vulnMu.RUnlock()
 
 	// ── Gate 5: Severity classification — enforce max severity per vuln type ──
 	originalSeverity := ""
@@ -168,6 +176,7 @@ If you cannot exploit it, downgrade severity to 'info' and report as information
 		fmt.Sscanf(c, "%f", &cvss)
 	}
 
+	vulnMu.Lock()
 	vuln := Vulnerability{
 		ID:                 fmt.Sprintf("XALG-%d", len(vulnerabilities)+1),
 		Title:              title,
@@ -191,6 +200,7 @@ If you cannot exploit it, downgrade severity to 'info' and report as information
 	}
 
 	vulnerabilities = append(vulnerabilities, vuln)
+	vulnMu.Unlock()
 
 	msg := fmt.Sprintf("✅ Vulnerability reported: [%s] %s (%s) — Verified: %v", vuln.ID, vuln.Title, strings.ToUpper(vuln.Severity), vuln.Verified)
 	if originalSeverity != "" {
@@ -329,16 +339,25 @@ func formatValidMethods() string {
 
 // GetVulnerabilities returns all reported vulnerabilities.
 func GetVulnerabilities() []Vulnerability {
-	return vulnerabilities
+	vulnMu.RLock()
+	defer vulnMu.RUnlock()
+	// Return a copy to avoid data races on the caller's side
+	result := make([]Vulnerability, len(vulnerabilities))
+	copy(result, vulnerabilities)
+	return result
 }
 
 // ResetVulnerabilities clears the vulnerability list (called at scan start).
 func ResetVulnerabilities() {
+	vulnMu.Lock()
+	defer vulnMu.Unlock()
 	vulnerabilities = nil
 }
 
 // GetVulnsJSON returns vulnerabilities as JSON.
 func GetVulnsJSON() string {
+	vulnMu.RLock()
+	defer vulnMu.RUnlock()
 	data, _ := json.MarshalIndent(vulnerabilities, "", "  ")
 	return string(data)
 }

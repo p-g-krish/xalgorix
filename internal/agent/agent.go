@@ -177,6 +177,9 @@ func (a *Agent) startWatchdog() func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
+		var lastStatusMsg string      // Track last emitted status to avoid duplicates
+		var lastStatusTime time.Time   // Track when we last emitted a status
+
 		for {
 			select {
 			case <-stopChan:
@@ -195,20 +198,25 @@ func (a *Agent) startWatchdog() func() {
 				if activeProcs > 0 || runningAgents > 0 {
 					a.touchActivity()
 
-					// Emit status about what's running (every 2 minutes)
-					if cmdDuration > 2*time.Minute && int(cmdDuration.Seconds())%120 < 30 {
+					// Emit status about what's running (every 5 minutes, deduplicated)
+					if cmdDuration > 5*time.Minute && time.Since(lastStatusTime) > 5*time.Minute {
 						statusMsg := fmt.Sprintf("⏳ Active: %d process(es)", activeProcs)
 						if activeCmd != "" {
 							cmdPreview := activeCmd
 							if len(cmdPreview) > 100 {
 								cmdPreview = cmdPreview[:100] + "..."
 							}
-							statusMsg += fmt.Sprintf(" | Running: %s (%s)", cmdPreview, cmdDuration.Round(time.Second))
+							statusMsg += fmt.Sprintf(" | Running: %s (%s)", cmdPreview, cmdDuration.Round(time.Minute))
 						}
 						if runningAgents > 0 {
 							statusMsg += fmt.Sprintf(" | Sub-agents: %d", runningAgents)
 						}
-						a.emit(Event{Type: "message", Content: statusMsg})
+						// Only emit if the message content actually changed
+						if statusMsg != lastStatusMsg {
+							a.emit(Event{Type: "message", Content: statusMsg})
+							lastStatusMsg = statusMsg
+							lastStatusTime = time.Now()
+						}
 					}
 					continue
 				}
@@ -336,13 +344,18 @@ func (a *Agent) Run(targets []string, instruction string) {
 
 		if err != nil {
 			consecutiveErrors++
-			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/5): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
-			if consecutiveErrors >= 5 {
+			a.emit(Event{Type: "error", Content: fmt.Sprintf("LLM error (attempt %d/8): %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
+			if consecutiveErrors >= 8 {
+				a.emit(Event{Type: "error", Content: fmt.Sprintf("⛔ Agent stopped: LLM failed %d consecutive times. Last error: %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
 				a.emit(Event{Type: "finished", Content: fmt.Sprintf("Agent stopped: LLM failed %d consecutive times. Last error: %s", consecutiveErrors, err.Error()), TotalTokens: tokenCount()})
 				return
 			}
-			// Exponential backoff: 5s, 10s, 15s, 20s, 25s
-			time.Sleep(time.Duration(consecutiveErrors*5) * time.Second)
+			// Exponential backoff: 5s, 10s, 15s, 20s, 25s, 30s, 35s, 40s
+			backoff := time.Duration(consecutiveErrors*5) * time.Second
+			if backoff > 40*time.Second {
+				backoff = 40 * time.Second
+			}
+			time.Sleep(backoff)
 			continue
 		}
 		consecutiveErrors = 0
@@ -483,31 +496,23 @@ func (a *Agent) Stop() {
 	browser.CleanupBrowser()
 }
 
-// SendMessage allows sending additional messages to the agent during a scan
+// SendMessage allows sending additional messages to the agent during a scan.
+// The message is injected into the conversation history and will be processed
+// on the agent's next iteration. This avoids concurrent LLM calls which would
+// corrupt the conversation history.
 func (a *Agent) SendMessage(message string) (string, error) {
-	if a.client == nil {
-		return "", fmt.Errorf("agent not initialized")
+	if a.stopped.Load() {
+		return "", fmt.Errorf("agent is not running")
 	}
 
 	a.msgMu.Lock()
-	a.messages = append(a.messages, llm.Message{Role: "user", Content: message})
+	a.messages = append(a.messages, llm.Message{Role: "user", Content: "[USER MESSAGE DURING SCAN]: " + message})
 	a.msgMu.Unlock()
 
-	a.msgMu.Lock()
-	msgs := make([]llm.Message, len(a.messages))
-	copy(msgs, a.messages)
-	a.msgMu.Unlock()
+	// Emit as a visible event so it appears in the feed
+	a.emit(Event{Type: "message", Content: fmt.Sprintf("📨 User message received: %s", message)})
 
-	response, err := a.client.Chat(msgs)
-	if err != nil {
-		return "", err
-	}
-
-	a.msgMu.Lock()
-	a.messages = append(a.messages, llm.Message{Role: "assistant", Content: response})
-	a.msgMu.Unlock()
-
-	return response, nil
+	return "Message received and will be processed on the next iteration.", nil
 }
 
 // formatToolResult formats tool execution results with helpful suggestions
@@ -611,10 +616,19 @@ func (a *Agent) emit(evt Event) {
 	evt.AgentID = a.ID
 	evt.Timestamp = time.Now()
 	if a.events != nil {
-		select {
-		case a.events <- evt:
-		default:
-			log.Printf("⚠️ Event channel full, dropped event type=%s tool=%s", evt.Type, evt.ToolName)
+		// Critical events (finished, error) must never be dropped — use blocking send with timeout
+		if evt.Type == "finished" || evt.Type == "error" {
+			select {
+			case a.events <- evt:
+			case <-time.After(10 * time.Second):
+				log.Printf("⚠️ CRITICAL: Timed out sending %s event (channel full for 10s)", evt.Type)
+			}
+		} else {
+			select {
+			case a.events <- evt:
+			default:
+				log.Printf("⚠️ Event channel full, dropped event type=%s tool=%s", evt.Type, evt.ToolName)
+			}
 		}
 	}
 }

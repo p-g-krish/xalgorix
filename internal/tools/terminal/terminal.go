@@ -863,7 +863,7 @@ func extractCommands(cmd string) []string {
 	// Also check if the command starts with a known tool
 	cmdTrimmed := strings.TrimSpace(lowerCmd)
 	for _, tool := range toolsList {
-		if strings.HasPrefix(cmdTrimmed, tool+" ") || cmdTrimmed == tool {
+		if (strings.HasPrefix(cmdTrimmed, tool+" ") || cmdTrimmed == tool) && !found[tool] {
 			found[tool] = true
 			result = append(result, tool)
 		}
