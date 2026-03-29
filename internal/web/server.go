@@ -33,7 +33,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.10.0"
+const version = "3.10.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -808,8 +808,8 @@ func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
 		// Update queue state after each target
 		s.saveQueueState(req.Targets, i, req.Instruction, req.ScanMode)
 
-		// Per-target context with 2-hour timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+		// Per-target context with 48-hour timeout (use stop button for manual control)
+		ctx, cancel := context.WithTimeout(context.Background(), 48*time.Hour)
 		s.mu.Lock()
 		s.cancelScan = cancel
 		s.mu.Unlock()
