@@ -4,6 +4,7 @@ package web
 import (
 	"bufio"
 	"bytes"
+	"context"
 	cryptorand "crypto/rand"
 	"embed"
 	"encoding/json"
@@ -32,7 +33,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.9.0"
+const version = "3.10.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -244,13 +245,14 @@ type Server struct {
 	port           int
 	clients        map[*websocket.Conn]bool
 	mu             sync.RWMutex
-	agent          *agent.Agent
+	currentAgent   *agent.Agent     // current agent for chat support
+	cancelScan     context.CancelFunc // cancels the current scan session context
 	running        atomic.Bool
 	stopReq        atomic.Bool
 	dataDir        string
 	currentScanDir string
+	currentScanID  string
 	discordWebhook string
-	liveScanRecord *ScanRecord
 	rateLimiter    *RateLimiter
 }
 
@@ -442,14 +444,24 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
 }
 
+
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	s.stopReq.Store(true)
+
+	// Cancel the current scan session context (interrupts LLM calls, tool execution)
 	s.mu.Lock()
-	agnt := s.agent
+	cancel := s.cancelScan
+	agnt := s.currentAgent
 	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if agnt != nil {
 		agnt.Stop()
 	}
+	// Kill all spawned processes as a safety net
+	terminal.KillAllProcesses()
+
 	// Do NOT set s.running = false here — let the runMultiScan goroutine
 	// handle its own cleanup to avoid a race where a new scan starts
 	// before the old goroutine has fully exited.
@@ -460,16 +472,825 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	scanID := ""
-	if s.currentScanDir != "" {
-		scanID = filepath.Base(s.currentScanDir)
-	}
+	s.mu.RLock()
+	scanID := s.currentScanID
+	s.mu.RUnlock()
 	json.NewEncoder(w).Encode(map[string]any{
 		"running": s.running.Load(),
 		"scan_id": scanID,
 		"vulns":   len(reporting.GetVulnerabilities()),
 	})
 }
+
+// ────────────────────────────────────────────────────────
+// scanSession — self-contained unit for a single scan run
+// ────────────────────────────────────────────────────────
+
+// scanSession isolates all per-scan state. Crashes in one session
+// cannot corrupt server-level state or leak into subsequent scans.
+type scanSession struct {
+	id             string
+	target         string
+	scanDir        string
+	cfg            *config.Config
+	agent          *agent.Agent
+	events         chan agent.Event
+	record         *ScanRecord
+	server         *Server
+	instruction    string
+	severityFilter []string
+	discoveryMode  bool
+	genReport      bool
+	resetState     bool
+}
+
+// cleanup tears down all per-session resources. Every sub-operation
+// has its own panic guard so cleanup NEVER panics upward.
+func (sess *scanSession) cleanup() {
+	// Kill all processes spawned during this session
+	func() {
+		defer func() { recover() }()
+		terminal.KillAllProcesses()
+	}()
+
+	// Stop agent if still running
+	if sess.agent != nil {
+		func() {
+			defer func() { recover() }()
+			sess.agent.Stop()
+		}()
+	}
+
+	// Clear server references under lock
+	sess.server.mu.Lock()
+	if sess.server.currentAgent == sess.agent {
+		sess.server.currentAgent = nil
+	}
+	sess.server.mu.Unlock()
+}
+
+// executeScanSession runs a single scan in complete isolation.
+// It NEVER panics upward — all panics are caught and logged.
+func (s *Server) executeScanSession(sess *scanSession) {
+	// IRONCLAD: This function NEVER panics upward.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[CRITICAL] scanSession %s panicked: %v", sess.id, r)
+			s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⛔ Scan %s crashed: %v — continuing", sess.target, r)})
+		}
+		// ALWAYS clean up, whether normal exit or panic
+		sess.cleanup()
+	}()
+
+	// 1. Reset global state if requested (with its own panic guard)
+	if sess.resetState {
+		func() {
+			defer func() { recover() }()
+			reporting.ResetVulnerabilities()
+			notes.ResetNotes()
+		}()
+	}
+
+	// 2. Set working directory
+	terminal.SetWorkDir(sess.scanDir)
+
+	// 3. Create agent with session's config
+	events := make(chan agent.Event, 512)
+	sess.events = events
+	agnt := agent.NewAgent(sess.cfg, "XalgorixAgent", events)
+	if sess.discoveryMode {
+		agnt.SetDiscoveryMode(true)
+	}
+	sess.agent = agnt
+
+	// Store agent ref on server for handleStop/handleChat (under lock)
+	s.mu.Lock()
+	s.currentScanDir = sess.scanDir
+	s.currentScanID = sess.id
+	s.currentAgent = agnt
+	s.mu.Unlock()
+
+	// 4. Initialize scan record
+	sess.record = &ScanRecord{
+		ID:        sess.id,
+		Target:    sess.target,
+		StartedAt: time.Now().Format(time.RFC3339),
+		Status:    "running",
+		Events:    []WSEvent{},
+		Vulns:     []VulnSummary{},
+	}
+	s.saveScanRecordTo(sess.record, sess.scanDir)
+
+	// 5. Event processing goroutine — drains events and broadcasts to WebSocket
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { recover() }() // never panic in event processor
+		for evt := range events {
+			s.processEvent(evt, sess)
+		}
+	}()
+
+	// 6. Build instruction with severity filter
+	instruction := sess.instruction
+	if len(sess.severityFilter) > 0 {
+		instruction = buildSeverityPrefix(sess.severityFilter) + "\n\n" + instruction
+	}
+
+	// 7. Run agent (blocks until finished or stopped)
+	agnt.Run([]string{sess.target}, instruction)
+
+	// 8. Close events channel and wait for event processor to drain
+	close(events)
+	<-done
+
+	// 9. Finalize record
+	sess.record.Status = "finished"
+	sess.record.FinishedAt = time.Now().Format(time.RFC3339)
+
+	// Refresh vulns from reporting module
+	sess.record.Vulns = nil
+	for _, v := range reporting.GetVulnerabilities() {
+		sess.record.Vulns = append(sess.record.Vulns, vulnToSummary(v))
+	}
+
+	s.saveScanRecordTo(sess.record, sess.scanDir)
+
+	// 10. Generate report if requested
+	if sess.genReport && len(sess.record.Vulns) > 0 {
+		if p, err := s.generateReportAt(sess.record, sess.scanDir); err == nil {
+			log.Printf("PDF report saved: %s", p)
+			desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s",
+				sess.target, len(sess.record.Vulns), time.Now().Format("15:04:05 MST"))
+			s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, p)
+			s.broadcast(WSEvent{Type: "report_ready", Content: fmt.Sprintf("/api/report/%s", sess.id)})
+		} else {
+			log.Printf("Failed to generate PDF report: %v", err)
+		}
+	}
+}
+
+// processEvent handles a single agent event — forwards to WebSocket, updates scan record, sends Discord.
+func (s *Server) processEvent(evt agent.Event, sess *scanSession) {
+	wsEvt := WSEvent{
+		Type:        evt.Type,
+		Content:     evt.Content,
+		ToolName:    evt.ToolName,
+		ToolArgs:    evt.ToolArgs,
+		AgentID:     evt.AgentID,
+		Timestamp:   evt.Timestamp.Format(time.RFC3339),
+		TotalTokens: evt.TotalTokens,
+	}
+
+	if evt.Type == "tool_result" {
+		wsEvt.Output = evt.ToolResult.Output
+		wsEvt.Error = evt.ToolResult.Error
+
+		// Push vuln to UI in real-time when report_vulnerability succeeds
+		if evt.ToolName == "report_vulnerability" && evt.ToolResult.Error == "" {
+			vulns := reporting.GetVulnerabilities()
+			if len(vulns) > 0 {
+				latest := vulns[len(vulns)-1]
+				vs := vulnToSummary(latest)
+				wsEvt.Vulns = []VulnSummary{vs}
+				sess.record.Vulns = append(sess.record.Vulns, vs)
+
+				// Discord: vulnerability found
+				sevColor := 0xef4444 // red for critical/high
+				switch vs.Severity {
+				case "medium":
+					sevColor = 0xd97706
+				case "low", "info":
+					sevColor = 0x3b82f6
+				}
+				var details strings.Builder
+				details.WriteString(fmt.Sprintf("**%s**\n\n", vs.Title))
+				if vs.Description != "" {
+					details.WriteString(fmt.Sprintf("📝 **Description:**\n%s\n\n", vs.Description))
+				}
+				if vs.Endpoint != "" {
+					details.WriteString(fmt.Sprintf("🔗 **Endpoint:** `%s`\n", vs.Endpoint))
+				}
+				if vs.Method != "" {
+					details.WriteString(fmt.Sprintf("📡 **Method:** `%s`\n", vs.Method))
+				}
+				if vs.CVE != "" {
+					details.WriteString(fmt.Sprintf("🏷️ **CVE:** `%s`\n", vs.CVE))
+				}
+				details.WriteString(fmt.Sprintf("📊 **CVSS:** `%.1f` | **Severity:** `%s`\n\n", vs.CVSS, strings.ToUpper(vs.Severity)))
+				if vs.Impact != "" {
+					details.WriteString(fmt.Sprintf("💥 **Impact:**\n%s\n\n", vs.Impact))
+				}
+				if vs.TechnicalAnalysis != "" {
+					details.WriteString(fmt.Sprintf("🔬 **Technical Analysis:**\n%s\n\n", vs.TechnicalAnalysis))
+				}
+				if vs.PoCDescription != "" {
+					details.WriteString(fmt.Sprintf("🧪 **PoC:**\n%s\n", vs.PoCDescription))
+				}
+				if vs.PoCScript != "" {
+					poc := vs.PoCScript
+					if len(poc) > 800 {
+						poc = poc[:800] + "\n... (truncated)"
+					}
+					details.WriteString(fmt.Sprintf("```\n%s\n```\n\n", poc))
+				}
+				if vs.Remediation != "" {
+					details.WriteString(fmt.Sprintf("🛡️ **Remediation:**\n%s", vs.Remediation))
+				}
+				s.sendDiscord(sevColor, fmt.Sprintf("🐛 %s Vulnerability Found", strings.ToUpper(vs.Severity)), details.String())
+			}
+		}
+	}
+
+	if evt.Type == "finished" {
+		vulns := reporting.GetVulnerabilities()
+		for _, v := range vulns {
+			wsEvt.Vulns = append(wsEvt.Vulns, vulnToSummary(v))
+		}
+	}
+
+	// Track stats
+	if evt.Type == "thinking" {
+		sess.record.Iterations++
+	}
+	if evt.Type == "tool_call" {
+		sess.record.ToolCalls++
+	}
+	if evt.TotalTokens > 0 {
+		sess.record.TotalTokens = evt.TotalTokens
+	}
+
+	// Accumulate events for persistence (limit stored output size)
+	savedEvt := wsEvt
+	if len(savedEvt.Output) > 500 {
+		savedEvt.Output = savedEvt.Output[:500] + "..."
+	}
+	sess.record.Events = append(sess.record.Events, savedEvt)
+
+	// Periodically save scan record (every 10 events)
+	if len(sess.record.Events)%10 == 0 {
+		s.saveScanRecordTo(sess.record, sess.scanDir)
+	}
+
+	s.broadcast(wsEvt)
+}
+
+// buildSeverityPrefix creates the severity filter instruction prefix.
+func buildSeverityPrefix(severityFilter []string) string {
+	severityText := "CRITICAL INSTRUCTION: You MUST ONLY look for and report "
+	severities := make([]string, len(severityFilter))
+	copy(severities, severityFilter)
+	severityText += strings.Join(severities, " and ") + " severity vulnerabilities. "
+	severityText += "DO NOT report, investigate, or mention any LOW severity, INFORMATIONAL, or INFO findings. "
+	severityText += "Ignore any potential LOW/INFO issues - they are out of scope for this engagement. "
+	severityText += "Focus ONLY on: " + strings.Join(severities, ", ") + "."
+	return severityText
+}
+
+// ────────────────────────────────────────────────────────
+// runMultiScan — orchestrates scanning across all targets
+// ────────────────────────────────────────────────────────
+
+// runMultiScan processes targets sequentially, one at a time.
+// Each target is scanned in a fully isolated scanSession.
+func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
+	if s.running.Load() {
+		s.broadcast(WSEvent{Type: "error", Content: "A scan is already running"})
+		return
+	}
+
+	// Top-level panic recovery — if ANYTHING in this goroutine panics,
+	// we MUST clean up and mark the scan as finished.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[CRITICAL] runMultiScan goroutine panicked: %v", r)
+			s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⛔ Scan goroutine crashed: %v — cleaning up", r)})
+		}
+		// ALWAYS clean up, whether we finished normally or crashed
+		s.clearQueueState()
+		s.mu.Lock()
+		s.cancelScan = nil
+		s.currentAgent = nil
+		s.mu.Unlock()
+		s.broadcast(WSEvent{Type: "queue_finished", Content: "Scan queue ended"})
+		time.Sleep(500 * time.Millisecond)
+		s.running.Store(false)
+		log.Printf("[INFO] runMultiScan goroutine exited, s.running=false")
+	}()
+
+	// Clear any previous queue state
+	s.clearQueueState()
+	s.running.Store(true)
+	s.stopReq.Store(false)
+	if req.DiscordWebhook != "" {
+		s.discordWebhook = req.DiscordWebhook
+	}
+	totalTargets := len(req.Targets)
+
+	// Save queue state for persistence
+	s.saveQueueState(req.Targets, 0, req.Instruction, req.ScanMode)
+
+	s.broadcast(WSEvent{
+		Type:         "queue_started",
+		Content:      fmt.Sprintf("Starting scan queue: %d target(s)", totalTargets),
+		TotalTargets: totalTargets,
+	})
+
+	// Discord: scan started
+	s.sendDiscord(0x00ff88, "🚀 Scan Started", fmt.Sprintf("**Targets:** %s\n**Mode:** %s\n**Total:** %d target(s)", strings.Join(req.Targets, ", "), req.ScanMode, totalTargets))
+
+	for i, target := range req.Targets {
+		if s.stopReq.Load() {
+			s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
+			break
+		}
+
+		// Update queue state after each target
+		s.saveQueueState(req.Targets, i, req.Instruction, req.ScanMode)
+
+		// Per-target context with 2-hour timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+		s.mu.Lock()
+		s.cancelScan = cancel
+		s.mu.Unlock()
+
+		switch req.ScanMode {
+		case "wildcard":
+			s.runWildcardTarget(ctx, scanCfg, req, target, i, totalTargets)
+		case "dast":
+			s.runDASTTarget(ctx, scanCfg, req, target, i, totalTargets)
+		default:
+			s.runSingleTarget(ctx, scanCfg, req, target, i, totalTargets)
+		}
+
+		cancel() // always cancel context after target is done
+	}
+
+	// Clear queue state when done
+	s.clearQueueState()
+
+	// Discord: scan finished
+	vulns := reporting.GetVulnerabilities()
+	if len(vulns) > 0 {
+		desc := fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST"))
+		s.sendDiscord(0x3b82f6, "✅ Scan Finished - Vulnerabilities Found", desc)
+	} else {
+		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** 0 found\n**Completed at:** %s", totalTargets, time.Now().Format("15:04:05 MST")))
+	}
+
+	log.Printf("[INFO] runMultiScan main body complete")
+}
+
+// ────────────────────────────────────────────────────────
+// Mode-specific target handlers
+// ────────────────────────────────────────────────────────
+
+// makeScanDir creates a per-target scan directory with nested structure: target/date/randomslug
+func (s *Server) makeScanDir(target string) string {
+	dateDir := time.Now().Format("2006-01-02")
+	scanDirName := fmt.Sprintf("%s_%s", sanitizeTarget(target), randomSlug())
+	scanDir := filepath.Join(s.dataDir, target, dateDir, scanDirName)
+	os.MkdirAll(scanDir, 0755)
+	return scanDir
+}
+
+// runSingleTarget handles a single-site mode scan for one target.
+func (s *Server) runSingleTarget(ctx context.Context, scanCfg *config.Config, req ScanRequest, target string, idx, total int) {
+	scanDir := s.makeScanDir(target)
+
+	instruction := "This is a SINGLE TARGET scan. Do NOT enumerate subdomains or perform wildcard discovery. Only test the exact target URL provided. Focus on the main domain/IP only. " + req.Instruction
+
+	s.broadcast(WSEvent{
+		Type:         "target_started",
+		Content:      fmt.Sprintf("Scanning target %d/%d: %s", idx+1, total, target),
+		Target:       target,
+		AgentID:      filepath.Base(scanDir),
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+
+	sess := &scanSession{
+		id:             filepath.Base(scanDir),
+		target:         target,
+		scanDir:        scanDir,
+		cfg:            scanCfg,
+		server:         s,
+		instruction:    buildAutonomousInstruction(target, instruction),
+		severityFilter: req.SeverityFilter,
+		discoveryMode:  false,
+		genReport:      true,
+		resetState:     true,
+	}
+	s.executeScanSession(sess)
+
+	s.broadcast(WSEvent{
+		Type:         "target_completed",
+		Content:      fmt.Sprintf("Target %d/%d completed: %s", idx+1, total, target),
+		Target:       target,
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+}
+
+// runDASTTarget handles a DAST mode scan for one target URL.
+func (s *Server) runDASTTarget(ctx context.Context, scanCfg *config.Config, req ScanRequest, target string, idx, total int) {
+	scanDir := s.makeScanDir(target)
+
+	dastInstruction := buildDASTInstruction(target)
+	if req.Instruction != "" {
+		dastInstruction += "\n\n" + req.Instruction
+	}
+
+	s.broadcast(WSEvent{
+		Type:         "target_started",
+		Content:      fmt.Sprintf("[DAST] Scanning URL: %s", target),
+		Target:       target,
+		AgentID:      filepath.Base(scanDir),
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+
+	sess := &scanSession{
+		id:             filepath.Base(scanDir),
+		target:         target,
+		scanDir:        scanDir,
+		cfg:            scanCfg,
+		server:         s,
+		instruction:    dastInstruction,
+		severityFilter: req.SeverityFilter,
+		discoveryMode:  false,
+		genReport:      true,
+		resetState:     true,
+	}
+	s.executeScanSession(sess)
+
+	s.broadcast(WSEvent{
+		Type:         "target_completed",
+		Content:      fmt.Sprintf("[DAST] Completed: %s", target),
+		Target:       target,
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+}
+
+// runWildcardTarget handles wildcard mode: Phase 1 subdomain discovery, then Phase 2 per-subdomain scanning.
+func (s *Server) runWildcardTarget(ctx context.Context, scanCfg *config.Config, req ScanRequest, target string, idx, total int) {
+	// ── PHASE 1: Subdomain Discovery ──
+	scanDir := s.makeScanDir(target)
+
+	discoveryInstruction := buildDiscoveryInstruction(target)
+	if req.Instruction != "" {
+		discoveryInstruction += "\n\n" + req.Instruction
+	}
+
+	s.broadcast(WSEvent{
+		Type:         "target_started",
+		Content:      fmt.Sprintf("[PHASE 1] Discovering subdomains for: %s", target),
+		Target:       target,
+		AgentID:      filepath.Base(scanDir),
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+
+	discoverySess := &scanSession{
+		id:             filepath.Base(scanDir),
+		target:         target,
+		scanDir:        scanDir,
+		cfg:            scanCfg,
+		server:         s,
+		instruction:    discoveryInstruction,
+		severityFilter: req.SeverityFilter,
+		discoveryMode:  true,
+		genReport:      false,
+		resetState:     false, // don't reset — accumulate vulns across subdomains
+	}
+	s.executeScanSession(discoverySess)
+
+	// Read discovered subdomains from file
+	subdomains := s.collectSubdomains(scanDir, target)
+
+	log.Printf("[INFO] Total subdomains found for %s: %d", target, len(subdomains))
+
+	s.broadcast(WSEvent{
+		Type:         "target_completed",
+		Content:      fmt.Sprintf("[PHASE 1] Discovery complete: found %d subdomains. Now scanning each individually.", len(subdomains)),
+		Target:       target,
+		TargetIndex:  idx + 1,
+		TotalTargets: total,
+	})
+
+	// ── PHASE 2: Scan each subdomain individually ──
+	for j, subdomain := range subdomains {
+		if s.stopReq.Load() {
+			log.Printf("[INFO] Subdomain loop stopped by user at %d/%d for %s", j+1, len(subdomains), target)
+			s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
+			break
+		}
+
+		log.Printf("[INFO] Starting subdomain %d/%d: %s (parent: %s)", j+1, len(subdomains), subdomain, target)
+
+		// Each subdomain gets its own isolated session wrapped in a panic guard
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[PANIC] Subdomain %d/%d crashed (%s): %v — skipping to next", j+1, len(subdomains), subdomain, r)
+					s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⚠️ Subdomain %s crashed: %v — skipping", subdomain, r)})
+				}
+			}()
+
+			subScanDir := s.makeScanDir(subdomain)
+			scanInstruction := buildSubdomainScanInstruction(subdomain, target, req.Instruction)
+
+			s.broadcast(WSEvent{
+				Type:           "target_started",
+				Content:        fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
+				Target:         subdomain,
+				AgentID:        filepath.Base(subScanDir),
+				TargetIndex:    idx + 1,
+				TotalTargets:   total,
+				SubTargetIndex: j + 1,
+				SubTargetTotal: len(subdomains),
+				ParentTarget:   target,
+			})
+
+			// Track vulns BEFORE this subdomain scan to only count new ones
+			vulnCountBefore := len(reporting.GetVulnerabilities())
+
+			subSess := &scanSession{
+				id:             filepath.Base(subScanDir),
+				target:         subdomain,
+				scanDir:        subScanDir,
+				cfg:            scanCfg,
+				server:         s,
+				instruction:    scanInstruction,
+				severityFilter: req.SeverityFilter,
+				discoveryMode:  false,
+				genReport:      false,
+				resetState:     false, // accumulate vulns across subdomains
+			}
+			s.executeScanSession(subSess)
+
+			// Generate PDF for this subdomain if NEW vulnerabilities found
+			allVulns := reporting.GetVulnerabilities()
+			if vulnCountBefore <= len(allVulns) {
+				newVulns := allVulns[vulnCountBefore:]
+				if len(newVulns) > 0 {
+					subScanRecord := ScanRecord{
+						ID:         filepath.Base(subScanDir),
+						Target:     subdomain,
+						StartedAt:  time.Now().Format(time.RFC3339),
+						Status:     "finished",
+						FinishedAt: time.Now().Format(time.RFC3339),
+						Vulns:      []VulnSummary{},
+					}
+					for _, v := range newVulns {
+						subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
+					}
+					reportPath, err := s.generateReportAt(&subScanRecord, subScanDir)
+					if err == nil {
+						desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(newVulns))
+						s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
+					}
+				}
+			}
+
+			s.broadcast(WSEvent{
+				Type:           "target_completed",
+				Content:        fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
+				Target:         subdomain,
+				TargetIndex:    idx + 1,
+				TotalTargets:   total,
+				SubTargetIndex: j + 1,
+				SubTargetTotal: len(subdomains),
+				ParentTarget:   target,
+			})
+		}()
+	}
+
+	log.Printf("[INFO] Wildcard scan complete for %s: scanned %d subdomains", target, len(subdomains))
+	// Clean up processes before next target
+	terminal.KillAllProcesses()
+}
+
+// buildDiscoveryInstruction creates the Phase 1 subdomain enumeration instruction.
+func buildDiscoveryInstruction(target string) string {
+	instruction := `# PHASE 1: SUBDOMAIN ENUMERATION ONLY
+
+## YOUR TASK: Find ALL subdomains of TARGET — NOTHING ELSE.
+
+## STRICT RULES:
+- You are ONLY allowed to enumerate subdomains in this phase.
+- DO NOT run any vulnerability scanners (nuclei, sqlmap, ffuf, gobuster, nikto, etc.).
+- DO NOT test for XSS, SQLi, SSRF, IDOR, or any other vulnerability.
+- DO NOT analyze JavaScript files, test authentication, or probe endpoints.
+- After collecting subdomains, you MUST call finish IMMEDIATELY.
+
+## SAVE ALL FILES IN THE CURRENT DIRECTORY
+Save all output files directly in the current working directory (not subdirectories).
+
+## SUBDOMAIN ENUMERATION COMMANDS - RUN ALL:
+
+# 1. subfinder (passive)
+subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
+subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
+
+# 2. Certificate Transparency (curl)
+curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
+
+# 3. findomain
+findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
+
+# 4. assetfinder
+assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt 2>/dev/null || true
+
+# 5. DNS Bufferover
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
+curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
+
+# 6. Wayback Machine
+curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
+
+# 7. Active enumeration
+subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
+
+# 8. MERGE ALL RESULTS
+cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_subdomains.txt
+echo "Total unique subdomains found:"
+wc -l ./all_subdomains.txt
+
+# 9. RESOLVE TO FIND LIVE HOSTS
+cat ./all_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
+cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
+echo "Live subdomains:"
+wc -l ./live_subdomains.txt
+
+## FINAL STEP (MANDATORY):
+1. Call add_note with the complete list of live subdomains from ./live_subdomains.txt
+2. Call finish IMMEDIATELY after. The system will handle vulnerability scanning of each subdomain separately.
+
+DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NOW.`
+
+	// Replace TARGET placeholder with actual target
+	instruction = strings.ReplaceAll(instruction, "TARGET", target)
+	return instruction
+}
+
+// collectSubdomains reads discovered subdomains from all known file locations and agent notes.
+func (s *Server) collectSubdomains(scanDir, target string) []string {
+	seen := make(map[string]bool)
+	var subdomains []string
+
+	// Helper: extract valid subdomains from a file
+	extractFromFile := func(path string) []string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var found []string
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "Total") || strings.HasPrefix(line, "wc") {
+				continue
+			}
+			line = strings.TrimPrefix(line, "http://")
+			line = strings.TrimPrefix(line, "https://")
+			line = strings.TrimPrefix(line, "http[s]://")
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				domain := strings.TrimRight(parts[0], "/.,;:")
+				if strings.Contains(domain, ".") && !seen[domain] {
+					seen[domain] = true
+					found = append(found, domain)
+				}
+			}
+		}
+		return found
+	}
+
+	// Helper: extract subdomains from a text blob (e.g., agent notes)
+	extractFromText := func(text string) []string {
+		var found []string
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			line = strings.TrimPrefix(line, "- ")
+			line = strings.TrimPrefix(line, "* ")
+			line = strings.TrimPrefix(line, "http://")
+			line = strings.TrimPrefix(line, "https://")
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				domain := strings.TrimRight(parts[0], "/.,;:")
+				if strings.Contains(domain, ".") && strings.Contains(domain, target) && !seen[domain] {
+					seen[domain] = true
+					found = append(found, domain)
+				}
+			}
+		}
+		return found
+	}
+
+	subdomainFileNames := []string{
+		"live_subdomains.txt", "live_resolved.txt", "all_subdomains.txt",
+		"all_discovered_subdomains.txt", "subdomains.txt", "live_hosts.txt",
+		"passive_subfinder.txt", "passive_subfinder2.txt", "active_subfinder.txt",
+	}
+
+	log.Printf("[DEBUG] Looking for subdomains in: %s", scanDir)
+
+	// Layer 1: Check exact files in scan directory
+	for _, name := range subdomainFileNames {
+		path := filepath.Join(scanDir, name)
+		if found := extractFromFile(path); len(found) > 0 {
+			subdomains = append(subdomains, found...)
+			log.Printf("[DEBUG] Layer 1: Found %d subdomains in %s", len(found), path)
+			if name == "live_subdomains.txt" || name == "live_resolved.txt" {
+				break
+			}
+		}
+	}
+
+	// Layer 2: Walk scan directory tree for any matching files
+	if len(subdomains) == 0 {
+		filepath.WalkDir(scanDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			base := filepath.Base(path)
+			for _, name := range subdomainFileNames {
+				if base == name {
+					if found := extractFromFile(path); len(found) > 0 {
+						subdomains = append(subdomains, found...)
+						log.Printf("[DEBUG] Layer 2: Found %d subdomains in %s", len(found), path)
+						return nil
+					}
+				}
+			}
+			return nil
+		})
+	}
+
+	// Layer 3: Check /tmp/ for subdomain files
+	if len(subdomains) == 0 {
+		for _, name := range subdomainFileNames {
+			path := filepath.Join("/tmp", name)
+			if found := extractFromFile(path); len(found) > 0 {
+				subdomains = append(subdomains, found...)
+				log.Printf("[DEBUG] Layer 3: Found %d subdomains in %s", len(found), path)
+				break
+			}
+		}
+		if len(subdomains) == 0 {
+			tmpEntries, _ := os.ReadDir("/tmp")
+			for _, e := range tmpEntries {
+				if e.IsDir() {
+					continue
+				}
+				name := e.Name()
+				if (strings.Contains(name, "subdomain") || strings.Contains(name, "live") || strings.Contains(name, target)) && strings.HasSuffix(name, ".txt") {
+					path := filepath.Join("/tmp", name)
+					if found := extractFromFile(path); len(found) > 0 {
+						subdomains = append(subdomains, found...)
+						log.Printf("[DEBUG] Layer 3b: Found %d subdomains in %s", len(found), path)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Layer 4: Parse agent notes for subdomain data
+	if len(subdomains) == 0 {
+		allNotes := notes.GetAllNotes()
+		for key, value := range allNotes {
+			lowerKey := strings.ToLower(key)
+			if strings.Contains(lowerKey, "subdomain") || strings.Contains(lowerKey, "live") || strings.Contains(lowerKey, "discovered") || strings.Contains(lowerKey, "domain") {
+				if found := extractFromText(value); len(found) > 0 {
+					subdomains = append(subdomains, found...)
+					log.Printf("[DEBUG] Layer 4: Found %d subdomains in note '%s'", len(found), key)
+				}
+			}
+		}
+		if len(subdomains) == 0 {
+			for _, value := range allNotes {
+				if found := extractFromText(value); len(found) > 0 {
+					subdomains = append(subdomains, found...)
+				}
+			}
+			if len(subdomains) > 0 {
+				log.Printf("[DEBUG] Layer 4b: Extracted %d subdomains from general notes", len(subdomains))
+			}
+		}
+	}
+
+	if len(subdomains) == 0 {
+		log.Printf("[WARN] No subdomains found after all 4 fallback layers for target: %s", target)
+	}
+
+	return subdomains
+}
+
 
 // handleUploadTargets parses a text file with one target per line.
 func (s *Server) handleUploadTargets(w http.ResponseWriter, r *http.Request) {
@@ -549,696 +1370,24 @@ func sanitizeTarget(target string) string {
 	return clean
 }
 
-// runMultiScan processes targets sequentially, one at a time.
-func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
-	if s.running.Load() {
-		s.broadcast(WSEvent{Type: "error", Content: "A scan is already running"})
+// saveScanRecordTo saves a scan record to a specific directory.
+func (s *Server) saveScanRecordTo(rec *ScanRecord, scanDir string) {
+	if scanDir == "" {
 		return
 	}
-
-	// Top-level panic recovery — if ANYTHING in this goroutine panics,
-	// we MUST clean up and mark the scan as finished.
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[CRITICAL] runMultiScan goroutine panicked: %v", r)
-			s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⛔ Scan goroutine crashed: %v — cleaning up", r)})
-		}
-		// ALWAYS clean up, whether we finished normally or crashed
-		s.clearQueueState()
-		s.broadcast(WSEvent{Type: "queue_finished", Content: "Scan queue ended"})
-		time.Sleep(500 * time.Millisecond)
-		s.running.Store(false)
-		log.Printf("[INFO] runMultiScan goroutine exited, s.running=false")
-	}()
-
-	// Clear any previous queue state
-	s.clearQueueState()
-	s.running.Store(true)
-	s.stopReq.Store(false)
-	if req.DiscordWebhook != "" {
-		s.discordWebhook = req.DiscordWebhook
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return
 	}
-	totalTargets := len(req.Targets)
-
-	// Save queue state for persistence
-	s.saveQueueState(req.Targets, 0, req.Instruction, req.ScanMode)
-
-	s.broadcast(WSEvent{
-		Type:         "queue_started",
-		Content:      fmt.Sprintf("Starting scan queue: %d target(s)", totalTargets),
-		TotalTargets: totalTargets,
-	})
-
-	// Discord: scan started
-	s.sendDiscord(0x00ff88, "🚀 Scan Started", fmt.Sprintf("**Targets:** %s\n**Mode:** %s\n**Total:** %d target(s)", strings.Join(req.Targets, ", "), req.ScanMode, totalTargets))
-
-	for i, target := range req.Targets {
-		if s.stopReq.Load() {
-			s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
-			break
-		}
-
-		// Update queue state after each target
-		s.saveQueueState(req.Targets, i, req.Instruction, req.ScanMode)
-
-		// Create per-target scan directory with nested structure: target/date/randomslug
-		dateDir := time.Now().Format("2006-01-02")
-		scanDirName := fmt.Sprintf("%s_%s", sanitizeTarget(target), randomSlug())
-		s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
-		os.MkdirAll(s.currentScanDir, 0755)
-
-		// Build the instruction FRESH for each target (don't mutate across iterations)
-		instruction := req.Instruction
-		if req.ScanMode == "wildcard" {
-			// PHASE 1: First do comprehensive subdomain enumeration
-			discoveryInstruction := `# PHASE 1: SUBDOMAIN ENUMERATION ONLY
-
-## YOUR TASK: Find ALL subdomains of TARGET — NOTHING ELSE.
-
-## STRICT RULES:
-- You are ONLY allowed to enumerate subdomains in this phase.
-- DO NOT run any vulnerability scanners (nuclei, sqlmap, ffuf, gobuster, nikto, etc.).
-- DO NOT test for XSS, SQLi, SSRF, IDOR, or any other vulnerability.
-- DO NOT analyze JavaScript files, test authentication, or probe endpoints.
-- After collecting subdomains, you MUST call finish IMMEDIATELY.
-
-## SAVE ALL FILES IN THE CURRENT DIRECTORY
-Save all output files directly in the current working directory (not subdirectories).
-
-## SUBDOMAIN ENUMERATION COMMANDS - RUN ALL:
-
-# 1. subfinder (passive)
-subfinder -d TARGET -recursive -silent -o ./passive_subfinder.txt
-subfinder -d TARGET -all -recursive -silent -o ./passive_subfinder2.txt
-
-# 2. Certificate Transparency (curl)
-curl -s "https://crt.sh/?q=%.TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u > ./passive_crt.txt
-
-# 3. findomain
-findomain -t TARGET --output ./passive_findomain.txt 2>/dev/null || true
-
-# 4. assetfinder
-assetfinder --subs-only TARGET | tee ./passive_assetfinder.txt 2>/dev/null || true
-
-# 5. DNS Bufferover
-curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > ./passive_dnsbufferover.txt
-curl -s "https://dns.bufferover.run/dns?q=.TARGET" | jq -r '.RDNS[]' 2>/dev/null | cut -d',' -f1 | sort -u >> ./passive_dnsbufferover.txt
-
-# 6. Wayback Machine
-curl -s "https://web.archive.org/cdx/search/cdx?url=*.TARGET/*&output=json&fl=original&filter=statuscode:200" | jq -r '.[].original' 2>/dev/null | cut -d'/' -f3 | sort -u > ./archive_subdomains.txt
-
-# 7. Active enumeration
-subfinder -d TARGET -all -recursive -t 100 -o ./active_subfinder.txt
-
-# 8. MERGE ALL RESULTS
-cat ./passive_*.txt ./active_*.txt ./archive_subdomains.txt 2>/dev/null | grep -v '*' | grep -v '@' | sort -u > ./all_subdomains.txt
-echo "Total unique subdomains found:"
-wc -l ./all_subdomains.txt
-
-# 9. RESOLVE TO FIND LIVE HOSTS
-cat ./all_subdomains.txt | dnsx -silent -a -resp -threads 100 -o ./live_resolved.txt 2>/dev/null || true
-cat ./live_resolved.txt | cut -d' ' -f1 | grep -v '^$' | sort -u > ./live_subdomains.txt
-echo "Live subdomains:"
-wc -l ./live_subdomains.txt
-
-## FINAL STEP (MANDATORY):
-1. Call add_note with the complete list of live subdomains from ./live_subdomains.txt
-2. Call finish IMMEDIATELY after. The system will handle vulnerability scanning of each subdomain separately.
-
-DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NOW.`
-
-			// Replace TARGET placeholder with actual target
-			discoveryInstruction = strings.ReplaceAll(discoveryInstruction, "TARGET", target)
-			// Append user's custom instructions if provided
-			if req.Instruction != "" {
-				discoveryInstruction += "\n\n" + req.Instruction
-			}
-
-			s.broadcast(WSEvent{
-				Type:         "target_started",
-				Content:      fmt.Sprintf("[PHASE 1] Discovering subdomains for: %s", target),
-				Target:       target,
-				AgentID:      filepath.Base(s.currentScanDir),
-				TargetIndex:  i + 1,
-				TotalTargets: totalTargets,
-			})
-
-			// Run discovery phase (no report, no state reset — this is just enumeration)
-			s.safeSingleScan(scanCfg, []string{target}, discoveryInstruction, req.SeverityFilter, true, false, true)
-
-			// Read discovered subdomains from file
-			// Multi-layer fallback to handle agents saving files to different locations
-			var subdomains []string
-			seen := make(map[string]bool) // dedup
-
-			// Helper: extract valid subdomains from a file
-			extractFromFile := func(path string) []string {
-				data, err := os.ReadFile(path)
-				if err != nil {
-					return nil
-				}
-				var found []string
-				for _, line := range strings.Split(string(data), "\n") {
-					line = strings.TrimSpace(line)
-					if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "Total") || strings.HasPrefix(line, "wc") {
-						continue
-					}
-					// Strip protocol prefixes
-					line = strings.TrimPrefix(line, "http://")
-					line = strings.TrimPrefix(line, "https://")
-					line = strings.TrimPrefix(line, "http[s]://")
-					// Extract domain from common formats: "sub.domain.com" or "sub.domain.com [1.2.3.4]"
-					parts := strings.Fields(line)
-					if len(parts) > 0 {
-						domain := strings.TrimRight(parts[0], "/.,;:")
-						// Must look like a domain (contains dot, has the parent target)
-						if strings.Contains(domain, ".") && !seen[domain] {
-							seen[domain] = true
-							found = append(found, domain)
-						}
-					}
-				}
-				return found
-			}
-
-			// Helper: extract subdomains from a text blob (e.g., agent notes)
-			extractFromText := func(text string) []string {
-				var found []string
-				for _, line := range strings.Split(text, "\n") {
-					line = strings.TrimSpace(line)
-					if line == "" {
-						continue
-					}
-					line = strings.TrimPrefix(line, "- ")
-					line = strings.TrimPrefix(line, "* ")
-					line = strings.TrimPrefix(line, "http://")
-					line = strings.TrimPrefix(line, "https://")
-					parts := strings.Fields(line)
-					if len(parts) > 0 {
-						domain := strings.TrimRight(parts[0], "/.,;:")
-						if strings.Contains(domain, ".") && strings.Contains(domain, target) && !seen[domain] {
-							seen[domain] = true
-							found = append(found, domain)
-						}
-					}
-				}
-				return found
-			}
-
-			subdomainFileNames := []string{
-				"live_subdomains.txt", "live_resolved.txt", "all_subdomains.txt",
-				"all_discovered_subdomains.txt", "subdomains.txt", "live_hosts.txt",
-				"passive_subfinder.txt", "passive_subfinder2.txt", "active_subfinder.txt",
-			}
-
-			log.Printf("[DEBUG] Looking for subdomains in: %s", s.currentScanDir)
-
-			// Layer 1: Check exact files in scan directory
-			for _, name := range subdomainFileNames {
-				path := filepath.Join(s.currentScanDir, name)
-				if found := extractFromFile(path); len(found) > 0 {
-					subdomains = append(subdomains, found...)
-					log.Printf("[DEBUG] Layer 1: Found %d subdomains in %s", len(found), path)
-					// For live_subdomains.txt or live_resolved.txt, these are the best source — stop
-					if name == "live_subdomains.txt" || name == "live_resolved.txt" {
-						break
-					}
-				}
-			}
-
-			// Layer 2: Walk scan directory tree for any matching files
-			if len(subdomains) == 0 {
-				filepath.WalkDir(s.currentScanDir, func(path string, d fs.DirEntry, err error) error {
-					if err != nil || d.IsDir() {
-						return nil
-					}
-					base := filepath.Base(path)
-					for _, name := range subdomainFileNames {
-						if base == name {
-							if found := extractFromFile(path); len(found) > 0 {
-								subdomains = append(subdomains, found...)
-								log.Printf("[DEBUG] Layer 2: Found %d subdomains in %s", len(found), path)
-								return nil
-							}
-						}
-					}
-					return nil
-				})
-			}
-
-			// Layer 3: Check /tmp/ for subdomain files (agents sometimes save here)
-			if len(subdomains) == 0 {
-				for _, name := range subdomainFileNames {
-					path := filepath.Join("/tmp", name)
-					if found := extractFromFile(path); len(found) > 0 {
-						subdomains = append(subdomains, found...)
-						log.Printf("[DEBUG] Layer 3: Found %d subdomains in %s", len(found), path)
-						break
-					}
-				}
-				// Also check /tmp/ for any file containing the target name
-				if len(subdomains) == 0 {
-					tmpEntries, _ := os.ReadDir("/tmp")
-					for _, e := range tmpEntries {
-						if e.IsDir() {
-							continue
-						}
-						name := e.Name()
-						if (strings.Contains(name, "subdomain") || strings.Contains(name, "live") || strings.Contains(name, target)) && strings.HasSuffix(name, ".txt") {
-							path := filepath.Join("/tmp", name)
-							if found := extractFromFile(path); len(found) > 0 {
-								subdomains = append(subdomains, found...)
-								log.Printf("[DEBUG] Layer 3b: Found %d subdomains in %s", len(found), path)
-								break
-							}
-						}
-					}
-				}
-			}
-
-			// Layer 4: Parse agent notes for subdomain data
-			if len(subdomains) == 0 {
-				allNotes := notes.GetAllNotes()
-				for key, value := range allNotes {
-					lowerKey := strings.ToLower(key)
-					if strings.Contains(lowerKey, "subdomain") || strings.Contains(lowerKey, "live") || strings.Contains(lowerKey, "discovered") || strings.Contains(lowerKey, "domain") {
-						if found := extractFromText(value); len(found) > 0 {
-							subdomains = append(subdomains, found...)
-							log.Printf("[DEBUG] Layer 4: Found %d subdomains in note '%s'", len(found), key)
-						}
-					}
-				}
-				// If still nothing, try ALL notes
-				if len(subdomains) == 0 {
-					for _, value := range allNotes {
-						if found := extractFromText(value); len(found) > 0 {
-							subdomains = append(subdomains, found...)
-						}
-					}
-					if len(subdomains) > 0 {
-						log.Printf("[DEBUG] Layer 4b: Extracted %d subdomains from general notes", len(subdomains))
-					}
-				}
-			}
-
-			if len(subdomains) == 0 {
-				log.Printf("[WARN] No subdomains found after all 4 fallback layers for target: %s", target)
-			} else {
-				log.Printf("[INFO] Total subdomains found for %s: %d", target, len(subdomains))
-			}
-
-			s.broadcast(WSEvent{
-				Type:         "target_completed",
-				Content:      fmt.Sprintf("[PHASE 1] Discovery complete: found %d subdomains. Now scanning each individually.", len(subdomains)),
-				Target:       target,
-				TargetIndex:  i + 1,
-				TotalTargets: totalTargets,
-			})
-
-			// PHASE 2: Scan each subdomain individually — SKIP subdomain enumeration (already done in Phase 1)
-			for j, subdomain := range subdomains {
-				if s.stopReq.Load() {
-					log.Printf("[INFO] Subdomain loop stopped by user at %d/%d for %s", j+1, len(subdomains), target)
-					s.broadcast(WSEvent{Type: "stopped", Content: "Scan queue stopped by user"})
-					break
-				}
-
-				log.Printf("[INFO] Starting subdomain %d/%d: %s (parent: %s)", j+1, len(subdomains), subdomain, target)
-
-				// Clean up any leftover processes from previous subdomain scan
-				terminal.KillAllProcesses()
-
-				// Wrap ENTIRE subdomain iteration in recovery so a crash on subdomain N
-				// doesn't skip subdomains N+1 through the end of the list
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							log.Printf("[PANIC] Subdomain %d/%d crashed (%s): %v — skipping to next", j+1, len(subdomains), subdomain, r)
-							s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⚠️ Subdomain %s crashed: %v — skipping", subdomain, r)})
-						}
-					}()
-
-					// Update queue state
-					s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
-
-					// Create scan directory for this subdomain (nested: target/date/subdomain_randomslug)
-					subDateDir := time.Now().Format("2006-01-02")
-					subDirName := fmt.Sprintf("%s_%s", sanitizeTarget(subdomain), randomSlug())
-					s.currentScanDir = filepath.Join(s.dataDir, target, subDateDir, subDirName)
-					os.MkdirAll(s.currentScanDir, 0755)
-
-					// Use subdomain-specific instruction that SKIPS subdomain enumeration
-					scanInstruction := buildSubdomainScanInstruction(subdomain, target, req.Instruction)
-
-					s.broadcast(WSEvent{
-						Type:           "target_started",
-						Content:        fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
-						Target:         subdomain,
-						AgentID:        filepath.Base(s.currentScanDir),
-						TargetIndex:    i + 1,
-						TotalTargets:   totalTargets,
-						SubTargetIndex: j + 1,
-						SubTargetTotal: len(subdomains),
-						ParentTarget:   target,
-					})
-
-					// Track vulns BEFORE this subdomain scan to only count new ones
-					vulnCountBefore := len(reporting.GetVulnerabilities())
-
-					s.safeSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
-
-					// Generate PDF for this subdomain if NEW vulnerabilities found
-					allVulns := reporting.GetVulnerabilities()
-					// Bounds check: prevent index-out-of-range if vulns were reset
-					if vulnCountBefore <= len(allVulns) {
-						newVulns := allVulns[vulnCountBefore:]
-						if len(newVulns) > 0 {
-							subScanRecord := ScanRecord{
-								ID:         filepath.Base(s.currentScanDir),
-								Target:     subdomain,
-								StartedAt:  time.Now().Format(time.RFC3339),
-								Status:     "finished",
-								FinishedAt: time.Now().Format(time.RFC3339),
-								Vulns:      []VulnSummary{},
-							}
-							for _, v := range newVulns {
-								subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
-							}
-							reportPath, err := s.generateReport(&subScanRecord)
-							if err == nil {
-								desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(newVulns))
-								s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
-							}
-						}
-					}
-
-					s.broadcast(WSEvent{
-						Type:           "target_completed",
-						Content:        fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
-						Target:         subdomain,
-						TargetIndex:    i + 1,
-						TotalTargets:   totalTargets,
-						SubTargetIndex: j + 1,
-						SubTargetTotal: len(subdomains),
-						ParentTarget:   target,
-					})
-				}()
-			}
-
-			log.Printf("[INFO] Wildcard scan complete for %s: scanned %d subdomains", target, len(subdomains))
-			// Clean up processes before next target
-			terminal.KillAllProcesses()
-
-			continue // Skip the regular scan below since we did wildcard handling above
-		} else if req.ScanMode == "dast" {
-			// DAST mode - autonomous URL vulnerability testing
-			dastInstruction := buildDASTInstruction(target)
-			// Append user's custom instructions if provided
-			if req.Instruction != "" {
-				dastInstruction += "\n\n" + req.Instruction
-			}
-			s.broadcast(WSEvent{
-				Type:         "target_started",
-				Content:      fmt.Sprintf("[DAST] Scanning URL: %s", target),
-				Target:       target,
-				AgentID:      filepath.Base(s.currentScanDir),
-				TargetIndex:  i + 1,
-				TotalTargets: totalTargets,
-			})
-
-			s.safeSingleScan(scanCfg, []string{target}, dastInstruction, req.SeverityFilter, true, true, false)
-
-			s.broadcast(WSEvent{
-				Type:         "target_completed",
-				Content:      fmt.Sprintf("[DAST] Completed: %s", target),
-				Target:       target,
-				TargetIndex:  i + 1,
-				TotalTargets: totalTargets,
-			})
-			continue
-		} else {
-			// Single site mode - explicitly tell agent to NOT do subdomain enumeration
-			instruction = "This is a SINGLE TARGET scan. Do NOT enumerate subdomains or perform wildcard discovery. Only test the exact target URL provided. Focus on the main domain/IP only. " + instruction
-		}
-
-		s.broadcast(WSEvent{
-			Type:         "target_started",
-			Content:      fmt.Sprintf("Scanning target %d/%d: %s", i+1, totalTargets, target),
-			Target:       target,
-			AgentID:      filepath.Base(s.currentScanDir),
-			TargetIndex:  i + 1,
-			TotalTargets: totalTargets,
-		})
-
-		s.safeSingleScan(scanCfg, []string{target}, instruction, req.SeverityFilter, true, true, false)
-
-		s.broadcast(WSEvent{
-			Type:         "target_completed",
-			Content:      fmt.Sprintf("Target %d/%d completed: %s", i+1, totalTargets, target),
-			Target:       target,
-			TargetIndex:  i + 1,
-			TotalTargets: totalTargets,
-		})
-	}
-
-	// Clear queue state when done
-	s.clearQueueState()
-
-	// Discord: scan finished
-	vulns := reporting.GetVulnerabilities()
-	
-	// Only generate PDF if vulnerabilities were found
-	reportPath := ""
-	if len(vulns) > 0 && s.liveScanRecord != nil {
-		s.liveScanRecord.Status = "finished"
-		s.liveScanRecord.FinishedAt = time.Now().Format(time.RFC3339)
-		s.liveScanRecord.Vulns = vulnSummaries(vulns)
-		if p, err := s.generateReport(s.liveScanRecord); err == nil {
-			reportPath = p
-		}
-	}
-	
-	// Send Discord notification
-	if len(vulns) > 0 {
-		desc := fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** %d found\n**Completed at:** %s", totalTargets, len(vulns), time.Now().Format("15:04:05 MST"))
-		if reportPath != "" {
-			s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
-		} else {
-			s.sendDiscord(0x3b82f6, "✅ Scan Finished - Vulnerabilities Found", desc)
-		}
-	} else {
-		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** 0 found\n**Completed at:** %s", totalTargets, time.Now().Format("15:04:05 MST")))
-	}
-
-	// NOTE: queue_finished broadcast and s.running.Store(false) are handled
-	// by the top-level defer at the start of runMultiScan.
-	// This ensures cleanup happens even if the function panics.
-	log.Printf("[INFO] runMultiScan main body complete")
+	os.WriteFile(filepath.Join(scanDir, "scan.json"), data, 0644)
 }
 
-// safeSingleScan wraps runSingleScan with panic recovery so a crash in one
-// target/subdomain never aborts the entire multi-target queue.
-func (s *Server) safeSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("⚠️ Scan crashed for %s: %v — continuing to next target", strings.Join(targets, ","), r)
-			log.Printf("[PANIC RECOVERY] %s", errMsg)
-			s.broadcast(WSEvent{Type: "error", Content: errMsg})
-		}
-	}()
-	s.runSingleScan(scanCfg, targets, instruction, severityFilter, resetState, generateReportAtEnd, discoveryMode)
-}
-
-func (s *Server) runSingleScan(scanCfg *config.Config, targets []string, instruction string, severityFilter []string, resetState bool, generateReportAtEnd bool, discoveryMode bool) {
-	// Reset global state from previous scans (skip for wildcard mode to accumulate vulns)
-	if resetState {
-		reporting.ResetVulnerabilities()
-		notes.ResetNotes()
-	}
-
-	events := make(chan agent.Event, 512)
-	// Set working directory for terminal commands
-	terminal.SetWorkDir(s.currentScanDir)
-
-	s.mu.Lock()
-	s.agent = agent.NewAgent(scanCfg, "XalgorixAgent", events)
-	if discoveryMode {
-		s.agent.SetDiscoveryMode(true)
-	}
-	s.mu.Unlock()
-
-	// Initialize scan record for persistence
-	scanRecord := ScanRecord{
-		ID:        filepath.Base(s.currentScanDir),
-		Target:    strings.Join(targets, ", "),
-		StartedAt: time.Now().Format(time.RFC3339),
-		Status:    "running",
-		Events:    []WSEvent{},
-		Vulns:     []VulnSummary{},
-	}
-
-	// Save initial scan record
-	s.liveScanRecord = &scanRecord
-	s.saveScanRecord(&scanRecord)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for evt := range events {
-			wsEvt := WSEvent{
-				Type:        evt.Type,
-				Content:     evt.Content,
-				ToolName:    evt.ToolName,
-				ToolArgs:    evt.ToolArgs,
-				AgentID:     evt.AgentID,
-				Timestamp:   evt.Timestamp.Format(time.RFC3339),
-				TotalTokens: evt.TotalTokens,
-			}
-
-			if evt.Type == "tool_result" {
-				wsEvt.Output = evt.ToolResult.Output
-				wsEvt.Error = evt.ToolResult.Error
-
-				// Push vuln to UI in real-time when report_vulnerability succeeds
-				if evt.ToolName == "report_vulnerability" && evt.ToolResult.Error == "" {
-					vulns := reporting.GetVulnerabilities()
-					if len(vulns) > 0 {
-						latest := vulns[len(vulns)-1]
-						vs := vulnToSummary(latest)
-						wsEvt.Vulns = []VulnSummary{vs}
-						scanRecord.Vulns = append(scanRecord.Vulns, vs)
-
-						// Discord: vulnerability found
-						sevColor := 0xef4444 // red for critical/high
-						switch vs.Severity {
-						case "medium":
-							sevColor = 0xd97706
-						case "low", "info":
-							sevColor = 0x3b82f6
-						}
-						// Build detailed description with all available fields
-						var details strings.Builder
-						details.WriteString(fmt.Sprintf("**%s**\n\n", vs.Title))
-						if vs.Description != "" {
-							details.WriteString(fmt.Sprintf("📝 **Description:**\n%s\n\n", vs.Description))
-						}
-						if vs.Endpoint != "" {
-							details.WriteString(fmt.Sprintf("🔗 **Endpoint:** `%s`\n", vs.Endpoint))
-						}
-						if vs.Method != "" {
-							details.WriteString(fmt.Sprintf("📡 **Method:** `%s`\n", vs.Method))
-						}
-						if vs.CVE != "" {
-							details.WriteString(fmt.Sprintf("🏷️ **CVE:** `%s`\n", vs.CVE))
-						}
-						details.WriteString(fmt.Sprintf("📊 **CVSS:** `%.1f` | **Severity:** `%s`\n\n", vs.CVSS, strings.ToUpper(vs.Severity)))
-						if vs.Impact != "" {
-							details.WriteString(fmt.Sprintf("💥 **Impact:**\n%s\n\n", vs.Impact))
-						}
-						if vs.TechnicalAnalysis != "" {
-							details.WriteString(fmt.Sprintf("🔬 **Technical Analysis:**\n%s\n\n", vs.TechnicalAnalysis))
-						}
-						if vs.PoCDescription != "" {
-							details.WriteString(fmt.Sprintf("🧪 **PoC:**\n%s\n", vs.PoCDescription))
-						}
-						if vs.PoCScript != "" {
-							// Truncate PoC script for Discord (max 1024 per field)
-							poc := vs.PoCScript
-							if len(poc) > 800 {
-								poc = poc[:800] + "\n... (truncated)"
-							}
-							details.WriteString(fmt.Sprintf("```\n%s\n```\n\n", poc))
-						}
-						if vs.Remediation != "" {
-							details.WriteString(fmt.Sprintf("🛡️ **Remediation:**\n%s", vs.Remediation))
-						}
-						s.sendDiscord(sevColor, fmt.Sprintf("🐛 %s Vulnerability Found", strings.ToUpper(vs.Severity)), details.String())
-					}
-				}
-			}
-
-			if evt.Type == "finished" {
-				vulns := reporting.GetVulnerabilities()
-				for _, v := range vulns {
-					wsEvt.Vulns = append(wsEvt.Vulns, vulnToSummary(v))
-				}
-			}
-
-			// Track stats
-			if evt.Type == "thinking" {
-				scanRecord.Iterations++
-			}
-			if evt.Type == "tool_call" {
-				scanRecord.ToolCalls++
-			}
-			if evt.TotalTokens > 0 {
-				scanRecord.TotalTokens = evt.TotalTokens
-			}
-
-			// Accumulate events for persistence (limit stored output size)
-			savedEvt := wsEvt
-			if len(savedEvt.Output) > 500 {
-				savedEvt.Output = savedEvt.Output[:500] + "..."
-			}
-			scanRecord.Events = append(scanRecord.Events, savedEvt)
-
-			// Periodically save scan record (every 10 events)
-			if len(scanRecord.Events)%10 == 0 {
-				s.saveScanRecord(&scanRecord)
-			}
-
-			s.broadcast(wsEvt)
-		}
-	}()
-
-	// Add severity filter to instruction if specified
-	if len(severityFilter) > 0 {
-		severityText := "CRITICAL INSTRUCTION: You MUST ONLY look for and report "
-		
-		// Build severity list
-		severities := make([]string, len(severityFilter))
-		copy(severities, severityFilter)
-		severityText += strings.Join(severities, " and ") + " severity vulnerabilities. "
-		severityText += "DO NOT report, investigate, or mention any LOW severity, INFORMATIONAL, or INFO findings. "
-		severityText += "Ignore any potential LOW/INFO issues - they are out of scope for this engagement. "
-		severityText += "Focus ONLY on: " + strings.Join(severities, ", ") + "."
-		instruction = severityText + "\n\n" + instruction
-	}
-
-	s.agent.Run(targets, instruction)
-	close(events)
-	<-done
-
-	// Finalize scan record
-	scanRecord.Status = "finished"
-	scanRecord.FinishedAt = time.Now().Format(time.RFC3339)
-
-	// Save final vulns from reporting module
-	scanRecord.Vulns = nil
-	for _, v := range reporting.GetVulnerabilities() {
-		scanRecord.Vulns = append(scanRecord.Vulns, vulnToSummary(v))
-	}
-
-	s.saveScanRecord(&scanRecord)
-	s.liveScanRecord = nil
-
-	// Generate PDF report only if requested (skip in wildcard mode - generate only at end of all subdomains)
-	if generateReportAtEnd && len(scanRecord.Vulns) > 0 {
-		reportPath, err := s.generateReport(&scanRecord)
-		if err != nil {
-			log.Printf("Failed to generate PDF report: %v", err)
-		} else {
-			log.Printf("PDF report saved: %s", reportPath)
-			// Send Discord with PDF
-			desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found\n**Completed at:** %s", scanRecord.Target, len(scanRecord.Vulns), time.Now().Format("15:04:05 MST"))
-			s.sendDiscordWithFile(0x3b82f6, "✅ Scan Finished - Report Ready", desc, reportPath)
-			// Notify via WebSocket that report is ready
-			s.broadcast(WSEvent{
-				Type:    "report_ready",
-				Content: fmt.Sprintf("/api/report/%s", scanRecord.ID),
-			})
-		}
-	}
+// saveScanRecord saves a scan record to the current scan directory (backward compat).
+func (s *Server) saveScanRecord(rec *ScanRecord) {
+	s.mu.RLock()
+	dir := s.currentScanDir
+	s.mu.RUnlock()
+	s.saveScanRecordTo(rec, dir)
 }
 
 // vulnToSummary converts a reporting.Vulnerability to a VulnSummary with all fields.
@@ -1271,15 +1420,22 @@ func vulnSummaries(vulns []reporting.Vulnerability) []VulnSummary {
 	return result
 }
 
-func (s *Server) saveScanRecord(rec *ScanRecord) {
-	if s.currentScanDir == "" {
-		return
-	}
-	data, err := json.MarshalIndent(rec, "", "  ")
-	if err != nil {
-		return
-	}
-	os.WriteFile(filepath.Join(s.currentScanDir, "scan.json"), data, 0644)
+// generateReportAt generates a PDF report, saving it to a specific directory.
+func (s *Server) generateReportAt(scan *ScanRecord, scanDir string) (string, error) {
+	// Temporarily set currentScanDir for the report generator,
+	// then restore it. The report.go generateReport method reads s.currentScanDir.
+	s.mu.Lock()
+	prevDir := s.currentScanDir
+	s.currentScanDir = scanDir
+	s.mu.Unlock()
+
+	reportPath, err := s.generateReport(scan)
+
+	s.mu.Lock()
+	s.currentScanDir = prevDir
+	s.mu.Unlock()
+
+	return reportPath, err
 }
 
 // handleListScans returns a list of all saved scans (sorted newest first).
@@ -1549,7 +1705,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if there's an active scan
-	if s.agent == nil {
+	s.mu.RLock()
+	agnt := s.currentAgent
+	s.mu.RUnlock()
+	if agnt == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "no active scan"})
@@ -1557,7 +1716,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send the message to the agent
-	response, err := s.agent.SendMessage(req.Message)
+	response, err := agnt.SendMessage(req.Message)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1670,15 +1829,8 @@ func (s *Server) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		scanID = dirs[len(dirs)-1].name
 	}
 
-	// If this is the currently running scan, return live in-memory data
-	s.mu.RLock()
-	live := s.liveScanRecord
-	s.mu.RUnlock()
-	if live != nil && live.ID == scanID {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(live)
-		return
-	}
+	// Note: live scan data is now managed per-session, not stored on Server.
+	// For active scans, data is written to disk periodically by the session.
 
 	scanPath := filepath.Join(s.dataDir, scanID, "scan.json")
 	data, err := os.ReadFile(scanPath)
