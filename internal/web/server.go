@@ -32,7 +32,7 @@ import (
 	"github.com/xalgord/xalgorix/internal/tools/terminal"
 )
 
-const version = "3.8.1"
+const version = "3.9.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -556,6 +556,21 @@ func (s *Server) runMultiScan(req ScanRequest, scanCfg *config.Config) {
 		return
 	}
 
+	// Top-level panic recovery — if ANYTHING in this goroutine panics,
+	// we MUST clean up and mark the scan as finished.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[CRITICAL] runMultiScan goroutine panicked: %v", r)
+			s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⛔ Scan goroutine crashed: %v — cleaning up", r)})
+		}
+		// ALWAYS clean up, whether we finished normally or crashed
+		s.clearQueueState()
+		s.broadcast(WSEvent{Type: "queue_finished", Content: "Scan queue ended"})
+		time.Sleep(500 * time.Millisecond)
+		s.running.Store(false)
+		log.Printf("[INFO] runMultiScan goroutine exited, s.running=false")
+	}()
+
 	// Clear any previous queue state
 	s.clearQueueState()
 	s.running.Store(true)
@@ -853,67 +868,81 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 				// Clean up any leftover processes from previous subdomain scan
 				terminal.KillAllProcesses()
 
-				// Update queue state
-				s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
+				// Wrap ENTIRE subdomain iteration in recovery so a crash on subdomain N
+				// doesn't skip subdomains N+1 through the end of the list
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("[PANIC] Subdomain %d/%d crashed (%s): %v — skipping to next", j+1, len(subdomains), subdomain, r)
+							s.broadcast(WSEvent{Type: "error", Content: fmt.Sprintf("⚠️ Subdomain %s crashed: %v — skipping", subdomain, r)})
+						}
+					}()
 
-				// Create scan directory for this subdomain (nested: target/date/subdomain_randomslug)
-				dateDir := time.Now().Format("2006-01-02")
-				scanDirName = fmt.Sprintf("%s_%s", sanitizeTarget(subdomain), randomSlug())
-				s.currentScanDir = filepath.Join(s.dataDir, target, dateDir, scanDirName)
-				os.MkdirAll(s.currentScanDir, 0755)
+					// Update queue state
+					s.saveQueueState([]string{target}, i, req.Instruction, req.ScanMode)
 
-				// Use subdomain-specific instruction that SKIPS subdomain enumeration
-				scanInstruction := buildSubdomainScanInstruction(subdomain, target, req.Instruction)
+					// Create scan directory for this subdomain (nested: target/date/subdomain_randomslug)
+					subDateDir := time.Now().Format("2006-01-02")
+					subDirName := fmt.Sprintf("%s_%s", sanitizeTarget(subdomain), randomSlug())
+					s.currentScanDir = filepath.Join(s.dataDir, target, subDateDir, subDirName)
+					os.MkdirAll(s.currentScanDir, 0755)
 
-				s.broadcast(WSEvent{
-					Type:           "target_started",
-					Content:        fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
-					Target:         subdomain,
-					AgentID:        filepath.Base(s.currentScanDir),
-					TargetIndex:    i + 1,           // Keep main target index (1-based)
-					TotalTargets:   totalTargets,     // Keep ORIGINAL total targets count
-					SubTargetIndex: j + 1,            // Subdomain index within this wildcard target
-					SubTargetTotal: len(subdomains),  // Total subdomains for this wildcard target
-					ParentTarget:   target,           // Parent domain
-				})
+					// Use subdomain-specific instruction that SKIPS subdomain enumeration
+					scanInstruction := buildSubdomainScanInstruction(subdomain, target, req.Instruction)
 
-				// Track vulns BEFORE this subdomain scan to only count new ones
-				vulnCountBefore := len(reporting.GetVulnerabilities())
+					s.broadcast(WSEvent{
+						Type:           "target_started",
+						Content:        fmt.Sprintf("[PHASE 2] Scanning subdomain %d/%d: %s", j+1, len(subdomains), subdomain),
+						Target:         subdomain,
+						AgentID:        filepath.Base(s.currentScanDir),
+						TargetIndex:    i + 1,
+						TotalTargets:   totalTargets,
+						SubTargetIndex: j + 1,
+						SubTargetTotal: len(subdomains),
+						ParentTarget:   target,
+					})
 
-				s.safeSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
+					// Track vulns BEFORE this subdomain scan to only count new ones
+					vulnCountBefore := len(reporting.GetVulnerabilities())
 
-				// Generate PDF for this subdomain if NEW vulnerabilities found
-				allVulns := reporting.GetVulnerabilities()
-				newVulns := allVulns[vulnCountBefore:] // Only vulns from THIS subdomain
-				if len(newVulns) > 0 {
-					subScanRecord := ScanRecord{
-						ID:        filepath.Base(s.currentScanDir),
-						Target:    subdomain,
-						StartedAt: time.Now().Format(time.RFC3339),
-						Status:    "finished",
-						FinishedAt: time.Now().Format(time.RFC3339),
-						Vulns:     []VulnSummary{},
+					s.safeSingleScan(scanCfg, []string{subdomain}, scanInstruction, req.SeverityFilter, false, false, false)
+
+					// Generate PDF for this subdomain if NEW vulnerabilities found
+					allVulns := reporting.GetVulnerabilities()
+					// Bounds check: prevent index-out-of-range if vulns were reset
+					if vulnCountBefore <= len(allVulns) {
+						newVulns := allVulns[vulnCountBefore:]
+						if len(newVulns) > 0 {
+							subScanRecord := ScanRecord{
+								ID:         filepath.Base(s.currentScanDir),
+								Target:     subdomain,
+								StartedAt:  time.Now().Format(time.RFC3339),
+								Status:     "finished",
+								FinishedAt: time.Now().Format(time.RFC3339),
+								Vulns:      []VulnSummary{},
+							}
+							for _, v := range newVulns {
+								subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
+							}
+							reportPath, err := s.generateReport(&subScanRecord)
+							if err == nil {
+								desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(newVulns))
+								s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
+							}
+						}
 					}
-					for _, v := range newVulns {
-						subScanRecord.Vulns = append(subScanRecord.Vulns, vulnToSummary(v))
-					}
-					reportPath, err := s.generateReport(&subScanRecord)
-					if err == nil {
-						desc := fmt.Sprintf("**Target:** %s\n**Vulnerabilities:** %d found", subdomain, len(newVulns))
-						s.sendDiscordWithFile(0x3b82f6, "🔴 Vulnerability Found - Report Ready", desc, reportPath)
-					}
-				}
 
-				s.broadcast(WSEvent{
-					Type:           "target_completed",
-					Content:        fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
-					Target:         subdomain,
-					TargetIndex:    i + 1,
-					TotalTargets:   totalTargets,
-					SubTargetIndex: j + 1,
-					SubTargetTotal: len(subdomains),
-					ParentTarget:   target,
-				})
+					s.broadcast(WSEvent{
+						Type:           "target_completed",
+						Content:        fmt.Sprintf("[PHASE 2] Subdomain %d/%d completed: %s", j+1, len(subdomains), subdomain),
+						Target:         subdomain,
+						TargetIndex:    i + 1,
+						TotalTargets:   totalTargets,
+						SubTargetIndex: j + 1,
+						SubTargetTotal: len(subdomains),
+						ParentTarget:   target,
+					})
+				}()
 			}
 
 			log.Printf("[INFO] Wildcard scan complete for %s: scanned %d subdomains", target, len(subdomains))
@@ -1001,17 +1030,10 @@ DO NOT continue past this point. DO NOT scan for vulnerabilities. Call finish NO
 		s.sendDiscord(0x3b82f6, "✅ Scan Finished", fmt.Sprintf("**Targets:** %d completed\n**Vulnerabilities:** 0 found\n**Completed at:** %s", totalTargets, time.Now().Format("15:04:05 MST")))
 	}
 
-	// Broadcast queue_finished BEFORE setting s.running = false
-	// This prevents the polling fallback from detecting scan completion
-	// and reloading the page before the client receives the event.
-	s.broadcast(WSEvent{
-		Type:    "queue_finished",
-		Content: fmt.Sprintf("All %d target(s) completed", totalTargets),
-	})
-
-	// Small delay to ensure WebSocket message is delivered before polling detects state change
-	time.Sleep(500 * time.Millisecond)
-	s.running.Store(false)
+	// NOTE: queue_finished broadcast and s.running.Store(false) are handled
+	// by the top-level defer at the start of runMultiScan.
+	// This ensures cleanup happens even if the function panics.
+	log.Printf("[INFO] runMultiScan main body complete")
 }
 
 // safeSingleScan wraps runSingleScan with panic recovery so a crash in one
